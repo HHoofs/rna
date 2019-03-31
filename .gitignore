@@ -161,6 +161,4 @@ virtualenv.bak/
 .mypy_cache/
 
 .gitignore
-.idea/
-ml/
-run-all.py
+.idea
