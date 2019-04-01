@@ -13,15 +13,18 @@ def build_model(arguments: dict) -> Model:
     # extract int for the number of units (as docopt will only give you strings
     units = int(arguments["--units"])
 
-    x = Input(shape=(19, 4, 1))
+    x = Input(shape=(4, 19, 1))
     if arguments["--flatten"] == "conv":
-        flatten = Conv2D(filters=units, kernel_size=(1, 4), strides=1, padding="valid", activation="relu")(x)
+        flatten = Conv2D(filters=units//2, kernel_size=(4, 1), strides=1, padding="valid", activation="relu")(x)
         flatten = Flatten()(flatten)
         flatten = Dense(units=19, activation="relu")(flatten)
     elif arguments["--flatten"] == "avg":
-        flatten = AveragePooling2D(pool_size=(1, 4), padding="valid")(x)
+        flatten = AveragePooling2D(pool_size=(4, 1), padding="valid")(x)
+        flatten = Flatten()(flatten)
     elif arguments["--flatten"] == "max":
-        flatten = MaxPooling2D(pool_size=(1, 4), padding="valid")(x)
+        flatten = MaxPooling2D(pool_size=(4, 1), padding="valid")(x)
+        flatten = Flatten()(flatten)
+
 
     cnn = Dense(units, activation="relu")(flatten)
     cnn = Dropout(rate=.25)(cnn)
@@ -31,7 +34,7 @@ def build_model(arguments: dict) -> Model:
 
     model = Model(inputs=x, outputs=y)
 
-    return model
+    return model 
 
 
 def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_crossentropy"):
@@ -42,7 +45,7 @@ def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_cro
     :param loss:
     :return:
     """
-    model.compile(optimizer=optimizer, loss=loss)
+    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
 
 
 def fit_model(model: Model, genarator, epochs: int = 1):
