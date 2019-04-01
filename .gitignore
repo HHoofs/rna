@@ -162,3 +162,4 @@ virtualenv.bak/
 
 .gitignore
 .idea
+data/
