@@ -2,12 +2,13 @@ from keras import Input, Model
 from keras.layers import Flatten, Dense, Dropout, Conv2D, AveragePooling2D, MaxPooling2D
 
 
-def build_model(arguments: dict) -> Model:
+def build_model(arguments: dict, n_classes: int) -> Model:
     """
 
     :param arguments
     :param flatten_opt:
     :param units:
+    :param n_classes
     :return:
     """
     # extract int for the number of units (as docopt will only give you strings
@@ -25,16 +26,15 @@ def build_model(arguments: dict) -> Model:
         flatten = MaxPooling2D(pool_size=(4, 1), padding="valid")(x)
         flatten = Flatten()(flatten)
 
-
     cnn = Dense(units, activation="relu")(flatten)
     cnn = Dropout(rate=.25)(cnn)
     cnn = Dense(units, activation="relu")(cnn)
 
-    y = Dense(9, activation="sigmoid")(cnn)
+    y = Dense(n_classes, activation="sigmoid")(cnn)
 
     model = Model(inputs=x, outputs=y)
 
-    return model 
+    return model
 
 
 def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_crossentropy"):
@@ -46,14 +46,3 @@ def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_cro
     :return:
     """
     model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
-
-
-def fit_model(model: Model, genarator, epochs: int = 1):
-    """
-
-    :param model:
-    :param genarator:
-    :param epochs:
-    :return:
-    """
-    model.fit_generator(generator=genarator, epochs=epochs)

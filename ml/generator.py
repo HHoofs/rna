@@ -84,11 +84,12 @@ class DataGenerator(keras.utils.Sequence):
         return x, y
 
 
-def read_data(file):
+def read_data(file, include_blanks=False):
     df = pd.read_csv(file, sep=";")
     df.fillna(0, inplace=True)
     # df.max()
-    df = df[df['type'] != "Blank_PCR"]
+    if not include_blanks:
+        df = df[df['type'] != "Blank_PCR"]
     x, y = extract_samples(df)
 
     return x, y
@@ -123,25 +124,31 @@ def split_train_test(x, y):
     return x_train, y_train, x_test, y_test
 
 
-
-def generate_data():
+def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
     label_encoder = preprocessing.LabelEncoder()
-    x_single, y_single = read_data(file='data/data_single.csv')
+    x_single, y_single = read_data(file='data/data_single.csv', include_blanks=include_blanks)
     label_encoder.fit(y_single)
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
     y_single_train = np.expand_dims(label_encoder.transform(y_single_train), -1)
     y_single_test = np.expand_dims(label_encoder.transform(y_single_test), -1)
 
-    x_mix, y_mix = read_data(file='data/data_mixture.csv')
-    x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
-    y_mix_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_train]
-    y_mix_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_test]
+    if include_mixtures:
+        x_mix, y_mix = read_data(file='data/data_mixture.csv', include_blanks=include_blanks)
+        x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
+        y_mix_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_train]
+        y_mix_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_test]
 
-    return x_single_train + x_mix_train, \
-           list(y_single_train) + list(y_mix_train), \
-           x_single_test + x_mix_test, \
-           list(y_single_test) + list(y_mix_test), \
-           label_encoder
+        return x_single_train + x_mix_train, \
+               list(y_single_train) + list(y_mix_train), \
+               x_single_test + x_mix_test, \
+               list(y_single_test) + list(y_mix_test), \
+               label_encoder
+    else:
+        return x_single_train, \
+               list(y_single_train), \
+               x_single_test, \
+               list(y_single_test), \
+               label_encoder
 
 
 if __name__ == '__main__':
