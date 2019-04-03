@@ -11,19 +11,16 @@ from random import sample
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size=4, n_classes=9, shuffle=True, cut_off=None):
+    def __init__(self, x, y, batch_size=4, n_classes=9, shuffle=True, cut_off=None):
         'Initialization'
         self.batch_size = batch_size
         self.x = x
         self.y = y
-        self.encoder = encoder
         self.n_classes = n_classes
-        self.conc = "single"
         self.shuffle = shuffle
         self.indexes = None
         self.cut_off = cut_off
         self.on_epoch_end()
-        self._split_data()
 
     def __len__(self):
         """
@@ -65,27 +62,6 @@ class DataGenerator(keras.utils.Sequence):
 
         # Generate data
         for i, ID in enumerate(list_IDs_temp):
-            xxx = random.choices(['single', 'augment', 'mixture'])
-            if xxx == "single":
-                y = sample(self.encoder.classes_, 1)
-                replicate = random.choice(self.single[y])
-            if xxx == "augment":
-                y = sample(self.encoder.classes_, 3)
-                replicate = [random.choice(self.single[_y]) for _y in y]
-            if xxx == "mixture":
-                y = sample(list(self.mixture.keys()), 1)
-                replicate = random.choice(self.mixture[y])
-
-
-                if self.conc == "single":
-                    x = np.array(random.choice(replicate))
-                elif self.conc == "avg":
-                    x = np.array(replicate)
-                    if len(x.shape) == 1:
-                        x = np.expand_dims(x, -1)
-                    np.mean(x,)
-
-
             # Store sample
             samples = self.x[ID]
             xx = range(len(samples))
@@ -107,20 +83,6 @@ class DataGenerator(keras.utils.Sequence):
 
         return x, y
 
-    def _split_data(self):
-        self.mixture = {}
-        self.single = {}
-        for x, y in zip(self.x, self.y):
-            if "+" in y:
-                if y not in self.mixture:
-                    self.mixture[y] = [x]
-                else:
-                    self.mixture[y].append(x)
-            else:
-                if y not in self.single:
-                    self.single[y] = [x]
-                else:
-                    self.single[y].append(x)
 
 def read_data(file, include_blanks=False):
     df = pd.read_csv(file, sep=";")
@@ -167,14 +129,14 @@ def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
     x_single, y_single = read_data(file='data/data_single.csv', include_blanks=include_blanks)
     label_encoder.fit(y_single)
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
-    # y_single_train = np.expand_dims(label_encoder.transform(y_single_train), -1)
-    # y_single_test = np.expand_dims(label_encoder.transform(y_single_test), -1)
+    y_single_train = np.expand_dims(label_encoder.transform(y_single_train), -1)
+    y_single_test = np.expand_dims(label_encoder.transform(y_single_test), -1)
 
     if include_mixtures:
         x_mix, y_mix = read_data(file='data/data_mixture.csv', include_blanks=include_blanks)
         x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
-        # y_mix_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_train]
-        # y_mix_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_test]
+        y_mix_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_train]
+        y_mix_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_test]
 
         return x_single_train + x_mix_train, \
                list(y_single_train) + list(y_mix_train), \
