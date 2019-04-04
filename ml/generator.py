@@ -52,6 +52,7 @@ class DataGenerator(keras.utils.Sequence):
         return X, y
 
     def on_epoch_end(self):
+        self.first = True
         seed(a=None, version=2)
 
     def __data_generation(self, list_IDs_temp):
@@ -63,7 +64,7 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i in list_IDs_temp:
             # select a mode for the generation of the data
-            mode = choices(['single', 'augment', 'mixture'], [.3, .3 ,.3])
+            mode = choices(['single', 'augment', 'mixture'], [.5, 0,.5])[0]
             if mode == "single":
                 fin_sample, sample_types = self._generate_single_sample()
 
@@ -83,11 +84,15 @@ class DataGenerator(keras.utils.Sequence):
             x = x > self.cut_off
             x = x.astype(int)
 
+        if self.first:
+            print(y)
+            self.first = False
+
         return x, y
 
     def _generate_mixture_sample(self):
         sample_type = sample(list(self.mixture.keys()), 1)
-        samples = choice(self.mixture[sample_type])
+        samples = choice(self.mixture[sample_type[0]])
         sample_types = sample_type[0].split("+")
         if self.conc == "single":
             fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
@@ -97,7 +102,7 @@ class DataGenerator(keras.utils.Sequence):
 
     def _generate_single_sample(self):
         sample_type = sample(self.classes, 1)
-        samples = choice(self.single[sample_type])
+        samples = choice(self.single[sample_type[0]])
         sample_types = sample_type
         if self.conc == "single":
             fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
