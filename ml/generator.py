@@ -1,17 +1,15 @@
 from copy import deepcopy
-from random import random
 
 import keras
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
-from random import sample
-from random import choice
+from random import sample, choice, choices, seed
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int=1, batches_per_epoch: int=1,
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int = 1, batches_per_epoch: int = 1,
                  shuffle=True, cut_off=None):
         'Initialization'
         self.batch_size = batch_size
@@ -19,6 +17,7 @@ class DataGenerator(keras.utils.Sequence):
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.classes = list(encoder.classes_)
         self.n_classes = len(encoder.classes_)
         self.conc = "single"
         self.shuffle = shuffle
@@ -27,6 +26,7 @@ class DataGenerator(keras.utils.Sequence):
         self.mixture = {}
         self.single = {}
         self._split_data()
+        self.on_epoch_end()
 
     def __len__(self):
         """
@@ -51,6 +51,9 @@ class DataGenerator(keras.utils.Sequence):
 
         return X, y
 
+    def on_epoch_end(self):
+        seed(a=None, version=2)
+
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
@@ -60,30 +63,21 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i in list_IDs_temp:
             # select a mode for the generation of the data
-            mode = random.choices(['single', 'augment', 'mixture'], [.3, .3 ,.3])
+            mode = choices(['single', 'augment', 'mixture'], [.3, .3 ,.3])
             if mode == "single":
-                sample_type = sample(self.encoder.classes_, 1)
-                samples = random.choice(self.single[sample_type])
+                fin_sample, sample_types = self._generate_single_sample()
 
-            if mode == "mixture":
-                sample_type = sample(list(self.mixture.keys()), 1)
-                samples = choice(self.mixture[sample_type])
+            elif mode == "mixture":
+                fin_sample, sample_types = self._generate_mixture_sample()
 
-            if mode == "augment":
-                fin_sample, sample_types = self._generate_augmented_sample(samples)
             else:
-                sample_types = sample_type[0].split("+")
-                if self.conc == "single":
-                    fin_sample = samples[choice(range(samples.shape[0])),:] if len(samples.shape) == 2 else samples
-                elif self.conc == "avg":
-                    fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+                fin_sample, sample_types = self._generate_augmented_sample()
 
-            x[i, :, 1] = fin_sample
+            x[i, :, 0] = fin_sample
 
             # Store class
-            for sample_type in sample_types:
-                class_idx = self.encoder.transform(sample_type)
-                y[i, class_idx] = 1
+            for sample_type_idx in self.encoder.transform(sample_types):
+                y[i, sample_type_idx] = 1
 
         if self.cut_off:
             x = x > self.cut_off
@@ -91,8 +85,28 @@ class DataGenerator(keras.utils.Sequence):
 
         return x, y
 
+    def _generate_mixture_sample(self):
+        sample_type = sample(list(self.mixture.keys()), 1)
+        samples = choice(self.mixture[sample_type])
+        sample_types = sample_type[0].split("+")
+        if self.conc == "single":
+            fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
+        else:
+            fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+        return fin_sample, sample_types
+
+    def _generate_single_sample(self):
+        sample_type = sample(self.classes, 1)
+        samples = choice(self.single[sample_type])
+        sample_types = sample_type
+        if self.conc == "single":
+            fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
+        else:
+            fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+        return fin_sample, sample_types
+
     def _generate_augmented_sample(self):
-        sample_types = sample(self.encoder.classes_, 3)
+        sample_types = sample(self.classes, 3)
         samples = [choice(self.single[sample_type]) for sample_type in sample_types]
         if self.conc == "single":
             sel_samples = [replicates[choice(range(replicates.shape[0])), :] if len(replicates.shape) == 2 else
@@ -109,13 +123,13 @@ class DataGenerator(keras.utils.Sequence):
                     self.mixture[y] = [x]
                 else:
                     self.mixture[y].append(x)
-                self.indexes.append(['mixture', y, len(self.mixture[y] - 1)])
+                self.indexes.append(['mixture', y, len(self.mixture[y]) - 1])
             else:
                 if y not in self.single:
                     self.single[y] = [x]
                 else:
                     self.single[y].append(x)
-                self.indexes.append(['single', y, len(self.single[y] - 1)])
+                self.indexes.append(['single', y, len(self.single[y]) - 1])
 
 
 class EvalGenerator(DataGenerator):
@@ -133,6 +147,7 @@ class EvalGenerator(DataGenerator):
         self.single = {}
         self.indexes = list()
         self._split_data()
+        self.on_epoch_end()
 
     def __len__(self):
         """
@@ -140,7 +155,7 @@ class EvalGenerator(DataGenerator):
 
         :return:
         """
-        return len(self.x)
+        return len(self.y)
 
     def __getitem__(self, index):
         """
@@ -173,14 +188,13 @@ class EvalGenerator(DataGenerator):
 
         fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
 
-        x[0, :, 1] = fin_sample
+        x[0, :, 0] = fin_sample
 
-        sample_types = sample_types[0].split("+")
+        sample_types = sample_types.split("+")
 
         # Store class
-        for sample_type in sample_types:
-            class_idx = self.encoder.transform(sample_type)
-            y[0, class_idx] = 1
+        for sample_type_idx in self.encoder.transform(sample_types):
+            y[0, sample_type_idx] = 1
 
         if self.cut_off:
             x = x > self.cut_off
@@ -224,7 +238,7 @@ def extract_samples(df):
 
 
 def split_train_test(x, y):
-    x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1, random_state=42)
     # return
     return x_train, y_train, x_test, y_test
 

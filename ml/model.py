@@ -16,12 +16,13 @@ def build_model(arguments: dict, n_classes: int) -> Model:
     units = int(arguments["--units"])
 
     x = Input(shape=(19, 1))
+    cnn_input = Flatten()(x)
 
-    cnn = Dense(units//4, activation="relu")(x)
+    cnn = Dense(units//4, activation="relu")(cnn_input)
     cnn = Dropout(rate=drop)(cnn)
     cnn = Dense(units, activation="relu")(cnn)
-    cnn = Dropout(rate=drop)(cnn)
-    cnn = Dense(units//2, activation="relu")(cnn)
+    # cnn = Dropout(rate=drop)(cnn)
+    # cnn = Dense(units//2, activation="relu")(cnn)
 
     y = Dense(n_classes, activation="sigmoid")(cnn)
 

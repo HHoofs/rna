@@ -15,9 +15,10 @@ Options:
 """
 from docopt import docopt
 from keras import Model
+from keras.callbacks import ReduceLROnPlateau
 from sklearn.preprocessing import LabelEncoder
 
-from ml.generator import generate_data, DataGenerator
+from ml.generator import generate_data, DataGenerator, EvalGenerator
 from ml.model import build_model, compile_model
 
 
@@ -32,7 +33,7 @@ def create_model(arguments: dict, n_classes: int) -> Model:
     return model
 
 
-def create_generators(arguments: dict) -> (DataGenerator, DataGenerator, LabelEncoder):
+def create_generators(arguments: dict) -> (DataGenerator, DataGenerator):
     """
 
     :param arguments: arguments as parsed by docopt
@@ -42,21 +43,20 @@ def create_generators(arguments: dict) -> (DataGenerator, DataGenerator, LabelEn
                                                                     include_mixtures=arguments["--mixture"])
     # ex
     batch_size = int(arguments["--batch"])
-    n_classes = len(label_encoder.classes_)
-    return DataGenerator(x_train, y_train, batch_size=batch_size, n_classes=n_classes), \
-           DataGenerator(x_train, y_test, batch_size=1, n_classes=n_classes), \
-           label_encoder
-
+    return DataGenerator(x_train, y_train, encoder=label_encoder,
+                         batch_size=batch_size, batches_per_epoch=250), \
+           EvalGenerator(x_train, y_test, encoder=label_encoder)
 
 def main(arguments: dict):
     """
 
     :param arguments:
     """
-    train_gen, validation_gen, encoder = create_generators(arguments)
-    model = create_model(arguments, n_classes=len(encoder.classes_))
+    train_gen, validation_gen = create_generators(arguments)
+    model = create_model(arguments, n_classes=train_gen.n_classes)
     print(model.summary())
-    model.fit_generator(train_gen, epochs=int(arguments["--epochs"]), validation_data=validation_gen)
+    model.fit_generator(train_gen, epochs=int(arguments["--epochs"]), validation_data=validation_gen,
+                        callbacks=[ReduceLROnPlateau(min_delta=.01, verbose=1)])
 
 
 if __name__ == '__main__':
