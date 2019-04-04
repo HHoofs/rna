@@ -7,22 +7,23 @@ import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from random import sample
-
+from random import choice
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size=4, n_classes=9, shuffle=True, cut_off=None):
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int=1, batches_per_epoch: int=1,
+                 shuffle=True, cut_off=None):
         'Initialization'
         self.batch_size = batch_size
+        self.batches_per_epoch = batches_per_epoch
         self.x = x
         self.y = y
         self.encoder = encoder
-        self.n_classes = n_classes
+        self.n_classes = len(encoder.classes_)
         self.conc = "single"
         self.shuffle = shuffle
-        self.indexes = None
+        self.indexes = list()
         self.cut_off = cut_off
-        self.on_epoch_end()
         self.mixture = {}
         self.single = {}
         self._split_data()
@@ -33,7 +34,7 @@ class DataGenerator(keras.utils.Sequence):
 
         :return:
         """
-        return int(np.floor(len(self.y) / self.batch_size))
+        return self.batches_per_epoch
 
     def __getitem__(self, index):
         """
@@ -42,22 +43,13 @@ class DataGenerator(keras.utils.Sequence):
         :param index:
         :return:
         """
-        # Generate indexes of the batch
-        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-
         # Find list of IDs
-        list_ids_temp = indexes
+        list_ids_temp = [*range(self.batch_size)]
 
         # Generate data
         X, y = self.__data_generation(list_ids_temp)
 
         return X, y
-
-    def on_epoch_end(self):
-        'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.y))
-        if self.shuffle:
-            np.random.shuffle(self.indexes)
 
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
@@ -66,32 +58,34 @@ class DataGenerator(keras.utils.Sequence):
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         # Generate data
-        for i, ID in enumerate(list_IDs_temp):
+        for i in list_IDs_temp:
+            # select a mode for the generation of the data
             mode = random.choices(['single', 'augment', 'mixture'], [.3, .3 ,.3])
             if mode == "single":
                 sample_type = sample(self.encoder.classes_, 1)
-                sample = random.choice(self.single[sample_type])
+                samples = random.choice(self.single[sample_type])
 
             if mode == "mixture":
                 sample_type = sample(list(self.mixture.keys()), 1)
-                sample = random.choice(self.mixture[sample_type])
+                samples = choice(self.mixture[sample_type])
 
             if mode == "augment":
                 sample_types = sample(self.encoder.classes_, 3)
-                samples = [random.choice(self.single[sample_type]) for sample_type in sample_types]
+                samples = [choice(self.single[sample_type]) for sample_type in sample_types]
                 if self.conc == "single":
-                    sel_samples = [conv_to_2d(np.array(random.choice(replicates))) for replicates in samples]
+                    sel_samples = [replicates[choice(range(replicates.shape[0])),:] if len(replicates.shape) == 2 else
+                                   replicates for replicates in samples]
                 if self.conc == "avg":
-                    sel_samples = [conv_to_2d(np.mean(conv_to_2d(np.array(replicates)), 0)) for replicates in samples]
-                fin_sample = conv_to_2d(np.sum(conv_to_2d(np.array(sel_samples)), 0))
+                    sel_samples = [np.mean(np.array(replicates), 0) for replicates in samples]
+                fin_sample = np.sum(sel_samples, 0)
             else:
                 sample_types = sample_type[0].split("+")
                 if self.conc == "single":
-                    fin_sample = conv_to_2d(np.array(random.choice(sample)))
+                    fin_sample = samples[choice(range(samples.shape[0])),:] if len(samples.shape) == 2 else samples
                 elif self.conc == "avg":
-                    fin_sample = conv_to_2d(np.mean(conv_to_2d(np.array(sample)), 0))
+                    fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
 
-            x[i, :, :] = fin_sample
+            x[i, :, 1] = fin_sample
 
             # Store class
             for sample_type in sample_types:
@@ -111,11 +105,85 @@ class DataGenerator(keras.utils.Sequence):
                     self.mixture[y] = [x]
                 else:
                     self.mixture[y].append(x)
+                self.indexes.append(['mixture', y, len(self.mixture[y] - 1)])
             else:
                 if y not in self.single:
                     self.single[y] = [x]
                 else:
                     self.single[y].append(x)
+                self.indexes.append(['single', y, len(self.single[y] - 1)])
+
+
+class EvalGenerator(DataGenerator):
+    'Generates data for Keras'
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, cut_off=None):
+        'Initialization'
+        self.batch_size = 1
+        self.x = x
+        self.y = y
+        self.encoder = encoder
+        self.n_classes = len(encoder.classes_)
+        self.conc = "single"
+        self.cut_off = cut_off
+        self.mixture = {}
+        self.single = {}
+        self.indexes = list()
+        self._split_data()
+
+    def __len__(self):
+        """
+        Denotes the number of batches per epoch
+
+        :return:
+        """
+        return len(self.x)
+
+    def __getitem__(self, index):
+        """
+        Generate one batch of data
+
+        :param index:
+        :return:
+        """
+        # Find list of IDs
+        list_id_temp = self.indexes[index]
+
+        # Generate data
+        X, y = self.__data_generation(list_id_temp)
+
+        return X, y
+
+    def __data_generation(self, list_IDs_temp):
+        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        # Initialization
+        x = np.zeros((self.batch_size, 19, 1))
+        y = np.zeros((self.batch_size, self.n_classes), dtype=int)
+
+        sample_group, sample_types, index = list_IDs_temp
+
+        if sample_group == "single":
+            samples = self.single[sample_types][index]
+
+        if sample_group == "mixture":
+            samples = self.mixture[sample_types][index]
+
+        fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+
+        x[0, :, 1] = fin_sample
+
+        sample_types = sample_types[0].split("+")
+
+        # Store class
+        for sample_type in sample_types:
+            class_idx = self.encoder.transform(sample_type)
+            y[0, class_idx] = 1
+
+        if self.cut_off:
+            x = x > self.cut_off
+            x = x.astype(int)
+
+        return x, y
+
 
 def read_data(file, include_blanks=False):
     df = pd.read_csv(file, sep=";")
@@ -137,7 +205,7 @@ def extract_samples(df):
         new_counter = row["replicate_value"]
         if new_counter <= current_counter:
             if x_new:
-                x.append(x_new)
+                x.append(np.array(x_new))
             if y_new:
                 y.append(y_new)
             x_new = list([row[1:-1].to_list()])
@@ -146,7 +214,7 @@ def extract_samples(df):
             x_new.append(row[1:-1].to_list())
         current_counter = new_counter
 
-    x.append(x_new)
+    x.append(np.array(x_new))
     y.append(y_new)
     return x, y
 
