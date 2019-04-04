@@ -23,6 +23,8 @@ class DataGenerator(keras.utils.Sequence):
         self.indexes = None
         self.cut_off = cut_off
         self.on_epoch_end()
+        self.mixture = {}
+        self.single = {}
         self._split_data()
 
     def __len__(self):
@@ -60,45 +62,40 @@ class DataGenerator(keras.utils.Sequence):
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
-        x = np.zeros((self.batch_size, 4, 19, 1))
+        x = np.zeros((self.batch_size, 19, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         # Generate data
         for i, ID in enumerate(list_IDs_temp):
-            xxx = random.choices(['single', 'augment', 'mixture'])
-            if xxx == "single":
-                y = sample(self.encoder.classes_, 1)
-                replicate = random.choice(self.single[y])
-            if xxx == "augment":
-                y = sample(self.encoder.classes_, 3)
-                replicate = [random.choice(self.single[_y]) for _y in y]
-            if xxx == "mixture":
-                y = sample(list(self.mixture.keys()), 1)
-                replicate = random.choice(self.mixture[y])
+            mode = random.choices(['single', 'augment', 'mixture'], [.3, .3 ,.3])
+            if mode == "single":
+                sample_type = sample(self.encoder.classes_, 1)
+                sample = random.choice(self.single[sample_type])
 
+            if mode == "mixture":
+                sample_type = sample(list(self.mixture.keys()), 1)
+                sample = random.choice(self.mixture[sample_type])
 
+            if mode == "augment":
+                sample_types = sample(self.encoder.classes_, 3)
+                samples = [random.choice(self.single[sample_type]) for sample_type in sample_types]
                 if self.conc == "single":
-                    x = np.array(random.choice(replicate))
+                    sel_samples = [conv_to_2d(np.array(random.choice(replicates))) for replicates in samples]
+                if self.conc == "avg":
+                    sel_samples = [conv_to_2d(np.mean(conv_to_2d(np.array(replicates)), 0)) for replicates in samples]
+                fin_sample = conv_to_2d(np.sum(conv_to_2d(np.array(sel_samples)), 0))
+            else:
+                sample_types = sample_type[0].split("+")
+                if self.conc == "single":
+                    fin_sample = conv_to_2d(np.array(random.choice(sample)))
                 elif self.conc == "avg":
-                    x = np.array(replicate)
-                    if len(x.shape) == 1:
-                        x = np.expand_dims(x, -1)
-                    np.mean(x,)
+                    fin_sample = conv_to_2d(np.mean(conv_to_2d(np.array(sample)), 0))
 
-
-            # Store sample
-            samples = self.x[ID]
-            xx = range(len(samples))
-            valid_cols = [*xx]
-            if len(samples) < 4:
-                while len(valid_cols) < 4:
-                    valid_cols += sample([*xx], len(samples))
-
-            for idx in range(4):
-                x[i, idx, :, :] = np.expand_dims(samples[valid_cols[idx]], -1)
+            x[i, :, :] = fin_sample
 
             # Store class
-            for class_idx in self.y[ID]:
+            for sample_type in sample_types:
+                class_idx = self.encoder.transform(sample_type)
                 y[i, class_idx] = 1
 
         if self.cut_off:
@@ -108,8 +105,6 @@ class DataGenerator(keras.utils.Sequence):
         return x, y
 
     def _split_data(self):
-        self.mixture = {}
-        self.single = {}
         for x, y in zip(self.x, self.y):
             if "+" in y:
                 if y not in self.mixture:
@@ -151,10 +146,15 @@ def extract_samples(df):
             x_new.append(row[1:-1].to_list())
         current_counter = new_counter
 
-    y.append(y_new)
     x.append(x_new)
+    y.append(y_new)
     return x, y
 
+
+def conv_to_2d(samples_array):
+    if len(samples_array.shape) == 1:
+        samples_array = np.expand_dims(samples_array, -1)
+    return samples_array
 
 def split_train_test(x, y):
     x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1)
@@ -167,14 +167,10 @@ def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
     x_single, y_single = read_data(file='data/data_single.csv', include_blanks=include_blanks)
     label_encoder.fit(y_single)
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
-    # y_single_train = np.expand_dims(label_encoder.transform(y_single_train), -1)
-    # y_single_test = np.expand_dims(label_encoder.transform(y_single_test), -1)
 
     if include_mixtures:
         x_mix, y_mix = read_data(file='data/data_mixture.csv', include_blanks=include_blanks)
         x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
-        # y_mix_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_train]
-        # y_mix_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_mix_test]
 
         return x_single_train + x_mix_train, \
                list(y_single_train) + list(y_mix_train), \

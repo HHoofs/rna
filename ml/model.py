@@ -12,23 +12,16 @@ def build_model(arguments: dict, n_classes: int) -> Model:
     :return:
     """
     # extract int for the number of units (as docopt will only give you strings
+    drop = .0
     units = int(arguments["--units"])
 
-    x = Input(shape=(4, 19, 1))
-    if arguments["--flatten"] == "conv":
-        flatten = Conv2D(filters=units//2, kernel_size=(4, 1), strides=1, padding="valid", activation="relu")(x)
-        flatten = Flatten()(flatten)
-        flatten = Dense(units=19, activation="relu")(flatten)
-    elif arguments["--flatten"] == "avg":
-        flatten = AveragePooling2D(pool_size=(4, 1), padding="valid")(x)
-        flatten = Flatten()(flatten)
-    elif arguments["--flatten"] == "max":
-        flatten = MaxPooling2D(pool_size=(4, 1), padding="valid")(x)
-        flatten = Flatten()(flatten)
+    x = Input(shape=(19, 1))
 
-    cnn = Dense(units, activation="relu")(flatten)
-    cnn = Dropout(rate=.25)(cnn)
+    cnn = Dense(units//4, activation="relu")(x)
+    cnn = Dropout(rate=drop)(cnn)
     cnn = Dense(units, activation="relu")(cnn)
+    cnn = Dropout(rate=drop)(cnn)
+    cnn = Dense(units//2, activation="relu")(cnn)
 
     y = Dense(n_classes, activation="sigmoid")(cnn)
 
