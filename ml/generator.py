@@ -70,14 +70,7 @@ class DataGenerator(keras.utils.Sequence):
                 samples = choice(self.mixture[sample_type])
 
             if mode == "augment":
-                sample_types = sample(self.encoder.classes_, 3)
-                samples = [choice(self.single[sample_type]) for sample_type in sample_types]
-                if self.conc == "single":
-                    sel_samples = [replicates[choice(range(replicates.shape[0])),:] if len(replicates.shape) == 2 else
-                                   replicates for replicates in samples]
-                if self.conc == "avg":
-                    sel_samples = [np.mean(np.array(replicates), 0) for replicates in samples]
-                fin_sample = np.sum(sel_samples, 0)
+                fin_sample, sample_types = self._generate_augmented_sample(samples)
             else:
                 sample_types = sample_type[0].split("+")
                 if self.conc == "single":
@@ -97,6 +90,17 @@ class DataGenerator(keras.utils.Sequence):
             x = x.astype(int)
 
         return x, y
+
+    def _generate_augmented_sample(self):
+        sample_types = sample(self.encoder.classes_, 3)
+        samples = [choice(self.single[sample_type]) for sample_type in sample_types]
+        if self.conc == "single":
+            sel_samples = [replicates[choice(range(replicates.shape[0])), :] if len(replicates.shape) == 2 else
+                           replicates for replicates in samples]
+        if self.conc == "avg":
+            sel_samples = [np.mean(np.array(replicates), 0) for replicates in samples]
+        fin_sample = np.sum(sel_samples, 0)
+        return fin_sample, sample_types
 
     def _split_data(self):
         for x, y in zip(self.x, self.y):
@@ -218,11 +222,6 @@ def extract_samples(df):
     y.append(y_new)
     return x, y
 
-
-def conv_to_2d(samples_array):
-    if len(samples_array.shape) == 1:
-        samples_array = np.expand_dims(samples_array, -1)
-    return samples_array
 
 def split_train_test(x, y):
     x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1)
