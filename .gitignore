@@ -160,6 +160,5 @@ virtualenv.bak/
 # mypy
 .mypy_cache/
 
-.gitignore
 .idea
 data/

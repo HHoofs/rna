@@ -2,21 +2,20 @@
 rna
 
 Usage:
-  run-all.py --flatten <mode> [--blanks] [--mixture] [--units <number>] [--epochs <number>] [--batch <size>]
+  run-all.py [--blanks] [--mixture] [--units <number>] [--epochs <number>] [--batch <size>]
 
 Options:
   -h --help           Show this screen.
   --flatten <mode>    Mode that is used to flatten te multiple scans
-  --blanks            If provided, the blanks are included in the data (and as category)
+  --blanks            Include blanks in the data
   --mixture           If provided, the mixture data is included
-  --units <number>    Number of units for each conv/dense layer [default: 16]
-  --epochs <number>   Number of epochs used for training [default: 1]
-  --batch <size>      Size of each batch during training [default: 8]
+  --units <number>    Number of units for each conv/dense layer [default: 8]
+  --epochs <number>   Number of epochs used for training [default: 100]
+  --batch <size>      Size of each batch during training [default: 4]
 """
 from docopt import docopt
 from keras import Model
 from keras.callbacks import ReduceLROnPlateau
-from sklearn.preprocessing import LabelEncoder
 
 from ml.generator import generate_data, DataGenerator, EvalGenerator
 from ml.model import build_model, compile_model
@@ -47,7 +46,8 @@ def create_generators(arguments: dict) -> (DataGenerator, DataGenerator):
                          batch_size=batch_size, batches_per_epoch=250), \
            EvalGenerator(x_train, y_test, encoder=label_encoder)
 
-def main(arguments: dict):
+
+def main(arguments: dict) -> None:
     """
 
     :param arguments:

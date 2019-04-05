@@ -12,17 +12,17 @@ def build_model(arguments: dict, n_classes: int) -> Model:
     :return:
     """
     # extract int for the number of units (as docopt will only give you strings
-    drop = .0
+    drop = 0.0
     units = int(arguments["--units"])
 
     x = Input(shape=(19, 1))
     cnn_input = Flatten()(x)
 
-    cnn = Dense(units//4, activation="relu")(cnn_input)
+    cnn = Dense(units//4, activation="sigmoid")(cnn_input)
     cnn = Dropout(rate=drop)(cnn)
-    cnn = Dense(units, activation="relu")(cnn)
-    # cnn = Dropout(rate=drop)(cnn)
-    # cnn = Dense(units//2, activation="relu")(cnn)
+    cnn = Dense(units, activation="sigmoid")(cnn)
+    cnn = Dropout(rate=drop)(cnn)
+    cnn = Dense(units//2, activation="sigmoid")(cnn)
 
     y = Dense(n_classes, activation="sigmoid")(cnn)
 

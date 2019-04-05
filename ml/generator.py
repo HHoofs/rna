@@ -64,7 +64,7 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i in list_IDs_temp:
             # select a mode for the generation of the data
-            mode = choices(['single', 'augment', 'mixture'], [.5, 0,.5])[0]
+            mode = choices(['single', 'augment', 'mixture'], [.5, .5,.5])[0]
             if mode == "single":
                 fin_sample, sample_types = self._generate_single_sample()
 
@@ -85,7 +85,6 @@ class DataGenerator(keras.utils.Sequence):
             x = x.astype(int)
 
         if self.first:
-            print(y)
             self.first = False
 
         return x, y
@@ -209,7 +208,7 @@ class EvalGenerator(DataGenerator):
 
 
 def read_data(file, include_blanks=False):
-    df = pd.read_csv(file, sep=";")
+    df = pd.read_csv(file)
     df.fillna(0, inplace=True)
     # df.max()
     if not include_blanks:
@@ -231,10 +230,10 @@ def extract_samples(df):
                 x.append(np.array(x_new))
             if y_new:
                 y.append(y_new)
-            x_new = list([row[1:-1].to_list()])
+            x_new = list([row[1:-1]])
             y_new = row[0]
         else:
-            x_new.append(row[1:-1].to_list())
+            x_new.append(row[1:-1])
         current_counter = new_counter
 
     x.append(np.array(x_new))
@@ -250,12 +249,12 @@ def split_train_test(x, y):
 
 def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
     label_encoder = preprocessing.LabelEncoder()
-    x_single, y_single = read_data(file='data/data_single.csv', include_blanks=include_blanks)
+    x_single, y_single = read_data(file='data/dataset_single_ann.csv', include_blanks=include_blanks)
     label_encoder.fit(y_single)
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
 
     if include_mixtures:
-        x_mix, y_mix = read_data(file='data/data_mixture.csv', include_blanks=include_blanks)
+        x_mix, y_mix = read_data(file='data/dataset_mixture_ann.csv', include_blanks=include_blanks)
         x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
 
         return x_single_train + x_mix_train, \
@@ -279,8 +278,6 @@ if __name__ == '__main__':
     x_train, y_train, x_test, y_test = split_train_test(x2, y2)
     y_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_train]
     y_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_test]
-
-
 
     print(max([len(xr) for xr in x]))
     dd = DataGenerator(x_train, y_train)
