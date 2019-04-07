@@ -150,7 +150,7 @@ class EvalGenerator(DataGenerator):
         self.encoder = encoder
         self.shuffle = shuffle
         self.n_classes = len(encoder.classes_)
-        self.conc = "single"
+        self.conc = "avg"
         self.cut_off = cut_off
         self.mixture = {}
         self.single = {}
