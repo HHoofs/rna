@@ -45,8 +45,11 @@ def create_generators(arguments: dict) -> (DataGenerator, EvalGenerator):
                                                                     include_mixtures=arguments["--mixture"])
     # ex
     batch_size = int(arguments["--batch"])
-    return DataGenerator(x_train, y_train, encoder=label_encoder,
-                         batch_size=batch_size, batches_per_epoch=250), \
+    # return DataGenerator(x_train, y_train, encoder=label_encoder,
+    #                      batch_size=batch_size, batches_per_epoch=250), \
+    #        EvalGenerator(x_train, y_test, encoder=label_encoder)
+    return EvalGenerator(x_train, y_train, encoder=label_encoder, shuffle=True,
+                         batch_size=batch_size), \
            EvalGenerator(x_train, y_test, encoder=label_encoder)
 
 

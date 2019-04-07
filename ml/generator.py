@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
-from random import sample, choice, choices, seed
+from random import sample, choice, choices, seed, shuffle
+
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
@@ -140,12 +141,14 @@ class DataGenerator(keras.utils.Sequence):
 
 class EvalGenerator(DataGenerator):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, cut_off=None):
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int = 1,
+                 shuffle: bool = False, cut_off=None):
         'Initialization'
-        self.batch_size = 1
+        self.batch_size = batch_size
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.shuffle = shuffle
         self.n_classes = len(encoder.classes_)
         self.conc = "single"
         self.cut_off = cut_off
@@ -171,12 +174,18 @@ class EvalGenerator(DataGenerator):
         :return:
         """
         # Find list of IDs
-        list_id_temp = self.indexes[index]
+        list_id_temp = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+        # list_id_temp = self.indexes[index]
 
         # Generate data
         X, y = self.__data_generation(list_id_temp)
 
         return X, y
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            shuffle(self.indexes)
 
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
@@ -184,23 +193,24 @@ class EvalGenerator(DataGenerator):
         x = np.zeros((self.batch_size, 19, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
-        sample_group, sample_types, index = list_IDs_temp
+        for i, sample_info  in enumerate(list_IDs_temp):
+            sample_group, sample_types, index = sample_info
 
-        if sample_group == "single":
-            samples = self.single[sample_types][index]
+            if sample_group == "single":
+                samples = self.single[sample_types][index]
 
-        if sample_group == "mixture":
-            samples = self.mixture[sample_types][index]
+            if sample_group == "mixture":
+                samples = self.mixture[sample_types][index]
 
-        fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+            fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
 
-        x[0, :, 0] = fin_sample
+            x[i, :, 0] = fin_sample
 
-        sample_types = sample_types.split("+")
+            sample_types = sample_types.split("+")
 
-        # Store class
-        for sample_type_idx in self.encoder.transform(sample_types):
-            y[0, sample_type_idx] = 1
+            # Store class
+            for sample_type_idx in self.encoder.transform(sample_types):
+                y[i, sample_type_idx] = 1
 
         if self.cut_off:
             x = x > self.cut_off
