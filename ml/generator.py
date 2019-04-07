@@ -64,7 +64,7 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i in list_IDs_temp:
             # select a mode for the generation of the data
-            mode = choices(['single', 'augment', 'mixture'], [.5, .5,.5])[0]
+            mode = choices(['single', 'augment', 'mixture'], [.5, .5,.25])[0]
             if mode == "single":
                 fin_sample, sample_types = self._generate_single_sample()
 
@@ -83,6 +83,8 @@ class DataGenerator(keras.utils.Sequence):
         if self.cut_off:
             x = x > self.cut_off
             x = x.astype(int)
+        else:
+            x = x / 1000
 
         if self.first:
             self.first = False
@@ -110,7 +112,7 @@ class DataGenerator(keras.utils.Sequence):
         return fin_sample, sample_types
 
     def _generate_augmented_sample(self):
-        sample_types = sample(self.classes, 3)
+        sample_types = sample(self.classes, 2)
         samples = [choice(self.single[sample_type]) for sample_type in sample_types]
         if self.conc == "single":
             sel_samples = [replicates[choice(range(replicates.shape[0])), :] if len(replicates.shape) == 2 else
@@ -203,12 +205,14 @@ class EvalGenerator(DataGenerator):
         if self.cut_off:
             x = x > self.cut_off
             x = x.astype(int)
+        else:
+            x = x / 1000
 
         return x, y
 
 
 def read_data(file, include_blanks=False):
-    df = pd.read_csv(file)
+    df = pd.read_csv(file, sep=";")
     df.fillna(0, inplace=True)
     # df.max()
     if not include_blanks:
