@@ -2,148 +2,80 @@
 rna
 
 Usage:
-  run-all.py [--blanks] [--mixture] [--units <number>] [--epochs <number>] [--batch <size>]
+  run-all.py [--blanks] [--mixture]  [--features <number>] [--units <number>] [--epochs <number>] [--batch <size>]
 
 Options:
-  -h --help           Show this screen.
-  --flatten <mode>    Mode that is used to flatten te multiple scans
-  --blanks            Include blanks in the data
-  --mixture           If provided, the mixture data is included
-  --units <number>    Number of units for each conv/dense layer [default: 25]
-  --epochs <number>   Number of epochs used for training [default: 1000]
-  --batch <size>      Size of each batch during training [default: 16]
+  -h --help            Show this screen.
+  --flatten <mode>     Mode that is used to flatten te multiple scans
+  --blanks             Include blanks in the data
+  --mixture            If provided, the mixture data is included
+  --features <number>  Number of features used for each sample [default: 19]
+  --units <number>     Number of units for each conv/dense layer [default: 100]
+  --epochs <number>    Number of epochs used for training [default: 1000]
+  --batch <size>       Size of each batch during training [default: 16]
 """
+
 from docopt import docopt
 from keras import Model
-import numpy as np
-from keras.callbacks import ReduceLROnPlateau, Callback
-from sklearn.metrics import accuracy_score
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler
 
 from ml.generator import generate_data, DataGenerator, EvalGenerator
-from ml.model import build_model, compile_model
+from ml.model import build_model, compile_model, create_callbacks
 
 
 def create_model(arguments: dict, n_classes: int) -> Model:
     """
+    Create keras/tf model based on the number of classes, features and the the number of units in the model
 
-    :param arguments: arguments as parsed by docopt
+    :param arguments: arguments as parsed by docopt (including `--units` and `--features`)
+    :param n_classes: number of classes in the output layer
     :return: A compiled keras model
     """
-    model = build_model(arguments, n_classes)
+    # build model
+    model = build_model(int(arguments['--units']), n_classes, int(arguments['--features']))
+    # compile model
     compile_model(model)
+
     return model
 
 
 def create_generators(arguments: dict) -> (DataGenerator, EvalGenerator):
     """
+    Read in data and create two generators (one for training and one for evaluation/testing)
 
     :param arguments: arguments as parsed by docopt
     :return: two DataGenerators, the first containing the train data, the second containing the test data
     """
+    # generate data and split into train and test, and return the label encoder for the purpose of
+    # converting the output (y) from string to a numeric value
     x_train, y_train, x_test, y_test, label_encoder = generate_data(include_blanks=arguments["--blanks"],
                                                                     include_mixtures=arguments["--mixture"])
-    # ex
-    batch_size = int(arguments["--batch"])
-    # return DataGenerator(x_train, y_train, encoder=label_encoder,
-    #                      batch_size=batch_size, batches_per_epoch=500), \
-    #        EvalGenerator(x_train, y_test, encoder=label_encoder)
-    return EvalGenerator(x_train, y_train, encoder=label_encoder, shuffle=True,
-                         batch_size=batch_size), \
-           EvalGenerator(x_train, y_test, encoder=label_encoder)
+
+    train_generator = DataGenerator(x_train, y_train, encoder=label_encoder, n_features=int(arguments['--features']),
+                                    batch_size=int(arguments["--batch"]), batches_per_epoch=len(x_train))
+
+    eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder, n_features=int(arguments['--features']))
+
+    return train_generator, eval_generator
 
 
 def main(arguments: dict) -> None:
     """
+    main, compiling and running the model
 
-    :param arguments:
+    :param arguments: arguments as parsed by docopt
     """
-    # clf = MLPClassifier(solver='lbfgs', alpha=1e-5, hidden_layer_sizes = (50,), random_state = 1, warm_start=True)
-    clf = MLPClassifier(random_state=0)
+    # create train and validation genrators
     train_gen, validation_gen = create_generators(arguments)
-    Y_f = list()
-    X_f = list()
-    for a,b,c in train_gen.indexes:
-        if a == 'single':
-            X_f.append(np.mean(train_gen.single[b][c], 0))
-            _y = [0] * train_gen.n_classes
-            for idx in train_gen.encoder.transform([b]):
-                _y[idx] = 1
-            Y_f.append(_y)
-        else:
-            X_f.append(np.mean(train_gen.mixture[b][c], 0))
-            _y = [0] * train_gen.n_classes
-            for idx in train_gen.encoder.transform(b.split("+")):
-                _y[idx] = 1
-            Y_f.append(_y)
-
-    X_f = np.array(X_f) > 150
-    X_f = X_f.astype(np.int)
-
-    Y_f = np.array(Y_f)
-
-    # scaler = StandardScaler()
-    # scaler.fit(X_f)
-    # X_f = scaler.transform(X_f)
-
-    ### TESTT
-    Y_tf = list()
-    X_tf = list()
-    for a,b,c in validation_gen.indexes:
-        if a == 'single':
-            X_tf.append(np.mean(validation_gen.single[b][c], 0))
-            _y = [0] * validation_gen.n_classes
-            for idx in validation_gen.encoder.transform([b]):
-                _y[idx] = 1
-            Y_tf.append(_y)
-        else:
-            X_tf.append(np.mean(validation_gen.mixture[b][c], 0))
-            _y = [0] * validation_gen.n_classes
-            for idx in validation_gen.encoder.transform(b.split("+")):
-                _y[idx] = 1
-            Y_tf.append(_y)
-
-    X_tf = np.array(X_tf) > 150
-    X_tf = X_tf.astype(np.int)
-    # X_tf = scaler.transform(X_tf)
-    Y_tf = np.array(Y_tf)
-
-    clf.fit(X_f, Y_f)
-    print(accuracy_score(Y_f, clf.predict(X_f)))
-    print(accuracy_score(Y_tf, clf.predict(X_tf)))
-
-
-    exit(0)
-
-    model = create_model(arguments, n_classes=train_gen.n_classes)
+    # create model
+    model = create_model(arguments=arguments, n_classes=train_gen.n_classes)
+    # print model
     print(model.summary())
+    # create callbacks
+    callbacks = create_callbacks(int(arguments['--batch']))
+    # fit model
     model.fit_generator(train_gen, epochs=int(arguments["--epochs"]), validation_data=validation_gen,
-                        callbacks=[CustomMetric(validation_gen), ReduceLROnPlateau(monitor='loss')], verbose=0)
-    preds = model.predict_generator(validation_gen)
-    preds_t = model.predict_generator(train_gen)
-    preds, preds_t
+                        callbacks=callbacks, verbose=1)
 
-
-class CustomMetric(Callback):
-    def __init__(self, generator: EvalGenerator):
-        self.gen = generator
-        self.steps = len(generator)
-        self.threshold = .5
-
-    def on_train_begin(self, logs={}):
-        self.acc = []
-        self.y_true = np.zeros((len(self.gen.indexes), self.gen.n_classes))
-        y_true = [self.gen.encoder.transform(class_name[1].split("+")) for class_name in self.gen.indexes]
-        for i, y in enumerate(y_true):
-            for idx_y in y:
-                self.y_true[i, idx_y] = 1
-
-
-    def on_epoch_end(self, epoch, logs={}):
-        y_pred = self.model.predict_generator(self.gen)
-        print("Validation Accuracy = {}".format(accuracy_score(self.y_true, y_pred > self.threshold)))
-        # print(y_pred)
 
 if __name__ == '__main__':
     arguments = docopt(__doc__, version='rna 0.0')

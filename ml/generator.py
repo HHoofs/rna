@@ -1,16 +1,18 @@
-from copy import deepcopy
+from random import sample, choice, choices, seed, shuffle
+from typing import Dict
 
 import keras
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
-from random import sample, choice, choices, seed, shuffle
 
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int = 1, batches_per_epoch: int = 1,
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
+                 sampling: Dict[str, int] = None,
+                 batch_size: int = 1, batches_per_epoch: int = 1,
                  shuffle=True, cut_off=None):
         'Initialization'
         self.batch_size = batch_size
@@ -18,6 +20,7 @@ class DataGenerator(keras.utils.Sequence):
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.n_features = n_features
         self.classes = list(encoder.classes_)
         self.n_classes = len(encoder.classes_)
         self.conc = "single"
@@ -26,6 +29,15 @@ class DataGenerator(keras.utils.Sequence):
         self.cut_off = cut_off
         self.mixture = {}
         self.single = {}
+        sampling_def = {"single": 1, "mixture": 1, "augment": 0}
+        if sampling:
+            assert sampling.keys() == sampling_def.keys(), \
+                "Keys of sampling dict should (only) contain 'single', 'mixture', and 'augment'"
+            assert all([isinstance(sampling_weight, int) or isinstance(sampling_weight, float) for
+                        sampling_weight in sampling.values()]), "henk"
+            self.sampling = sampling
+        else:
+            self.sampling = sampling_def
         self._split_data()
         self.on_epoch_end()
 
@@ -59,13 +71,14 @@ class DataGenerator(keras.utils.Sequence):
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
-        x = np.zeros((self.batch_size, 19, 1))
+        x = np.zeros((self.batch_size, self.n_features, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         # Generate data
         for i in list_IDs_temp:
             # select a mode for the generation of the data
-            mode = choices(['single', 'augment', 'mixture'], [.5, .5,.25])[0]
+            mode = choices(['single', 'augment', 'mixture'],
+                           [self.sampling['single'], self.sampling['augment'], self.sampling['mixture']])[0]
             if mode == "single":
                 fin_sample, sample_types = self._generate_single_sample()
 
@@ -141,13 +154,14 @@ class DataGenerator(keras.utils.Sequence):
 
 class EvalGenerator(DataGenerator):
     'Generates data for Keras'
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, batch_size: int = 1,
-                 shuffle: bool = False, cut_off=None):
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
+                 batch_size: int = 1, shuffle: bool = False, cut_off=None):
         'Initialization'
-        self.batch_size = batch_size
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.n_features = n_features
+        self.batch_size = batch_size
         self.shuffle = shuffle
         self.n_classes = len(encoder.classes_)
         self.conc = "avg"
@@ -190,7 +204,7 @@ class EvalGenerator(DataGenerator):
     def __data_generation(self, list_IDs_temp):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
-        x = np.zeros((self.batch_size, 19, 1))
+        x = np.zeros((self.batch_size, self.n_features, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         for i, sample_info  in enumerate(list_IDs_temp):
@@ -224,7 +238,6 @@ class EvalGenerator(DataGenerator):
 def read_data(file, include_blanks=False):
     df = pd.read_csv(file, sep=";")
     df.fillna(0, inplace=True)
-    # df.max()
     if not include_blanks:
         df = df[df['type'] != "Blank_PCR"]
     x, y = extract_samples(df)
@@ -255,9 +268,16 @@ def extract_samples(df):
     return x, y
 
 
-def split_train_test(x, y):
+def split_train_test(x, y) -> tuple(list):
+    """
+    split the data into a train and test, stratifying for the classes
+
+    :param x: samples
+    :param y: classes
+    :return: train samples, test samples, train classes, test classes
+    """
     x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1, random_state=42)
-    # return
+
     return x_train, y_train, x_test, y_test
 
 
