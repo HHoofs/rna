@@ -47,7 +47,7 @@ def build_model(units: int, n_classes: int, n_features: int) -> Model:
     # flatten input shape (i.e. remove the ,1)
     cnn_input = Flatten()(x)
     # first dense (hidden) layer
-    cnn = Dense(units//3, activation="sigmoid")(cnn_input)
+    cnn = Dense(units//4, activation="sigmoid")(cnn_input)
     # dropout
     cnn = Dropout(rate=drop)(cnn)
     # second dense (hidden) layer
@@ -85,7 +85,7 @@ def create_callbacks(batch_size: int) -> list:
     # create log dir path
     os.makedirs(log_dir)
     # create callbacks
-    callbacks = [ReduceLROnPlateau(monitor='loss'),
+    callbacks = [#ReduceLROnPlateau(monitor='loss'),
                  TensorBoard(log_dir=log_dir, batch_size=batch_size)]
 
     return callbacks
