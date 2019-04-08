@@ -1,5 +1,5 @@
 from random import sample, choice, choices, seed, shuffle
-from typing import Dict
+from typing import Dict, Iterable
 
 import keras
 import numpy as np
@@ -155,7 +155,7 @@ class DataGenerator(keras.utils.Sequence):
 class EvalGenerator(DataGenerator):
     'Generates data for Keras'
     def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
-                 batch_size: int = 1, shuffle: bool = False, cut_off=None):
+                 batch_size: int = 1, shuffle: bool = False, cut_off: int = None):
         'Initialization'
         self.x = x
         self.y = y
@@ -235,40 +235,71 @@ class EvalGenerator(DataGenerator):
         return x, y
 
 
-def read_data(file, include_blanks=False):
+def read_data(file: str, include_blanks: bool = False) -> (list, list):
+    """
+    read in data from csv file into pandas and convert it to samples and classes
+
+    :param file: string of file location
+    :param include_blanks: boolean to indicate if blanks should be included in the samples (and classes)
+    :return: the samples (x) and corresponding classes (y)
+    """
+    # read data
     df = pd.read_csv(file, sep=";")
+    # fill missings with 0
     df.fillna(0, inplace=True)
+    # if blanks should not be included remove them from the data
     if not include_blanks:
         df = df[df['type'] != "Blank_PCR"]
+    # extract samples and classes
     x, y = extract_samples(df)
 
     return x, y
 
 
-def extract_samples(df):
+def extract_samples(df: pd.DataFrame) -> (list, list):
+    """
+    Extract the samples and classes from a dataframe
+
+    :param df: a pandas dataframe
+    :return: the samples (x) and corresponding classes (y)
+    """
+    # init x and y
     x = list()
     y = list()
+    # init samples and classes
     x_new, y_new = None, None
+    # init counter
     current_counter = np.inf
+    # iterrate over all rows
     for index, row in df.iterrows():
+        # get new counter
         new_counter = row["replicate_value"]
+        # if new counter is below current counter new sample is initiated
         if new_counter <= current_counter:
+            # catch first iteration
             if x_new:
+                # append sample (as array) to x
                 x.append(np.array(x_new))
             if y_new:
+                # append class to y
                 y.append(y_new)
+            # retrieve sample and class
             x_new = list([row[1:-1]])
             y_new = row[0]
         else:
+            # retrieve sample (as class is already determined)
             x_new.append(row[1:-1])
+        # update counter
         current_counter = new_counter
 
+    # add last sample and class
     x.append(np.array(x_new))
     y.append(y_new)
+
     return x, y
 
 
-def split_train_test(x, y) -> tuple(list):
+def split_train_test(x, y) -> (list, list, list, list):
     """
     split the data into a train and test, stratifying for the classes
 
@@ -281,7 +312,7 @@ def split_train_test(x, y) -> tuple(list):
     return x_train, y_train, x_test, y_test
 
 
-def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
+def generate_data(include_blanks: bool = False, include_mixtures: bool = False):
     label_encoder = preprocessing.LabelEncoder()
     x_single, y_single = read_data(file='data/dataset_single_ann.csv', include_blanks=include_blanks)
     label_encoder.fit(y_single)
@@ -302,17 +333,3 @@ def generate_data(include_blanks: bool=False, include_mixtures: bool=False):
                x_single_test, \
                list(y_single_test), \
                label_encoder
-
-
-if __name__ == '__main__':
-    label_encoder = preprocessing.LabelEncoder()
-    x, y = read_data(file='../data/data_single.csv')
-    label_encoder.fit(y)
-    x2, y2 = read_data(file='../data/data_mixture.csv')
-    x_train, y_train, x_test, y_test = split_train_test(x2, y2)
-    y_train = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_train]
-    y_test = [label_encoder.transform(y_mixt.split("+")) for y_mixt in y_test]
-
-    print(max([len(xr) for xr in x]))
-    dd = DataGenerator(x_train, y_train)
-    pass
