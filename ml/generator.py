@@ -1,5 +1,5 @@
 from random import sample, choice, choices, seed, shuffle
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Tuple
 
 import keras
 import numpy as np
@@ -41,7 +41,7 @@ class DataGenerator(keras.utils.Sequence):
         self._split_data()
         self.on_epoch_end()
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Denotes the number of batches per epoch
 
@@ -49,7 +49,7 @@ class DataGenerator(keras.utils.Sequence):
         """
         return self.batches_per_epoch
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Tuple[np.array, np.array]:
         """
         Generate one batch of data
 
@@ -68,14 +68,14 @@ class DataGenerator(keras.utils.Sequence):
         self.first = True
         seed(a=None, version=2)
 
-    def __data_generation(self, list_IDs_temp):
+    def __data_generation(self, list_id_temp: list) -> Tuple[np.array, np.array]:
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
         x = np.zeros((self.batch_size, self.n_features, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         # Generate data
-        for i in list_IDs_temp:
+        for i in list_id_temp:
             # select a mode for the generation of the data
             mode = choices(['single', 'augment', 'mixture'],
                            [self.sampling['single'], self.sampling['augment'], self.sampling['mixture']])[0]
@@ -244,7 +244,7 @@ def read_data(file: str, include_blanks: bool = False) -> (list, list):
     :return: the samples (x) and corresponding classes (y)
     """
     # read data
-    df = pd.read_csv(file, sep=";")
+    df = pd.read_csv(file)
     # fill missings with 0
     df.fillna(0, inplace=True)
     # if blanks should not be included remove them from the data
