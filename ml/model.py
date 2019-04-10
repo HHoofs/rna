@@ -143,7 +143,7 @@ class MetricsPerType(Callback):
             y_true_mat = np.array(self.y_true[sample_group])
             y_pred_mat = np.squeeze(np.array(self.y_pred[sample_group]) >= self.threshold)
             acc = accuracy_score(y_true_mat, y_pred_mat)
-            f1 = f1_score(y_true_tot, y_pred_tot)
+            f1 = f1_score(y_true_mat, y_pred_mat, average='samples')
             print(f'accuracy {sample_group}: {acc}')
             print(f'f1-score {sample_group}: {f1}')
 
@@ -154,6 +154,6 @@ class MetricsPerType(Callback):
                 y_pred_tot = np.append(y_pred_tot, y_pred_mat, 0)
 
         acc_tot = accuracy_score(y_true_tot, y_pred_tot)
-        f1_tot = f1_score(y_true_tot, y_pred_tot)
+        f1_tot = f1_score(y_true_tot, y_pred_tot, average='samples')
         print(f'accuracy total: {acc_tot}')
         print(f'f1-score total: {f1_tot}')
