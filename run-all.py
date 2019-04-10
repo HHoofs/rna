@@ -2,17 +2,17 @@
 rna
 
 Usage:
-  run-all.py [--blanks] [--mixture]  [--features <number>] [--units <number>] [--epochs <number>] [--batch <size>]
+  run-all.py [--blanks] [--mixture] [--augment] [--features <n>] [--units <n>] [--epochs <n>] [--batch <s>]
 
 Options:
   -h --help            Show this screen.
   --flatten <mode>     Mode that is used to flatten te multiple scans
   --blanks             Include blanks in the data
   --mixture            If provided, the mixture data is included
-  --features <number>  Number of features used for each sample [default: 19]
-  --units <number>     Number of units for each conv/dense layer [default: 100]
-  --epochs <number>    Number of epochs used for training [default: 1000]
-  --batch <size>       Size of each batch during training [default: 16]
+  --features <n>       Number of features used for each sample [default: 19]
+  --units <n>          Number of units for each conv/dense layer [default: 100]
+  --epochs <n>         Number of epochs used for training [default: 50]
+  --batch <s>          Size of each batch during training [default: 16]
 """
 from typing import Tuple
 
@@ -52,11 +52,21 @@ def create_generators(arguments: dict) -> Tuple[DataGenerator, EvalGenerator]:
                                                                     include_mixtures=arguments["--mixture"])
 
     # init train generator
-    train_generator = DataGenerator(x_train, y_train, encoder=label_encoder, n_features=int(arguments['--features']),
+    sampling = {"single": 1,
+                "mixture": 1 if arguments["--mixture"] else 0,
+                "augment": 1 if arguments["--augment"] else 0}
+
+    print(sampling)
+
+    train_generator = DataGenerator(x_train, y_train, encoder=label_encoder,
+                                    n_features=int(arguments["--features"]), sampling=sampling,
                                     batch_size=int(arguments["--batch"]), batches_per_epoch=len(x_train))
 
     # init eval generator
-    eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder, n_features=int(arguments['--features']))
+    augmented_samples = len(x_test)//2 if arguments["--augment"] else None
+
+    eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder,
+                                   augmented_samples=augmented_samples, n_features=int(arguments["--features"]))
 
     return train_generator, eval_generator
 
@@ -74,10 +84,10 @@ def main(arguments: dict) -> None:
     # print model
     print(model.summary())
     # create callbacks
-    callbacks = create_callbacks(int(arguments['--batch']))
+    callbacks = create_callbacks(int(arguments['--batch']), validation_gen)
     # fit model
     model.fit_generator(train_gen, epochs=int(arguments["--epochs"]), validation_data=validation_gen,
-                        callbacks=callbacks, verbose=1)
+                        callbacks=callbacks, verbose=1, shuffle=False)
 
 
 if __name__ == '__main__':

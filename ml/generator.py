@@ -71,7 +71,7 @@ class DataGenerator(Sequence):
     def __data_generation(self, list_id_temp: list) -> Tuple[np.array, np.array]:
         """Generates data containing batch_size samples"""
         # Initialization
-        x = np.zeros((self.batch_size, self.n_features, 1))
+        x = np.zeros((self.batch_size, self.n_features))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         # Generate data
@@ -89,7 +89,7 @@ class DataGenerator(Sequence):
                 fin_sample, sample_types = self._generate_augmented_sample()
 
             # store x
-            x[i, :, 0] = fin_sample
+            x[i, :] = fin_sample
             # store y
             if sample_types:
                 for sample_type_idx in self.encoder.transform(sample_types):
@@ -171,7 +171,7 @@ class DataGenerator(Sequence):
 
 class EvalGenerator(DataGenerator):
     """Generates data for Keras"""
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, augmented_samples: int = None, n_features: int = 19,
                  batch_size: int = 1, shuffle_before_epoch: bool = False, cut_off: int = None):
         """Initialization"""
         self.x = x
@@ -181,6 +181,7 @@ class EvalGenerator(DataGenerator):
         self.batch_size = batch_size
         self.shuffle = shuffle_before_epoch
         self.n_classes = len(encoder.classes_)
+        self.classes = list(encoder.classes_)
         self.conc = "avg"
         self.cut_off = cut_off
         self.mixture = {}
@@ -188,6 +189,9 @@ class EvalGenerator(DataGenerator):
         self.indexes = list()
         self._split_data()
         self.on_epoch_end()
+        if augmented_samples:
+            self.augmented = {}
+            self._add_augmented(augmented_samples)
 
     def __len__(self) -> int:
         """
@@ -195,7 +199,7 @@ class EvalGenerator(DataGenerator):
 
         :return:
         """
-        return len(self.y)
+        return len(self.indexes)
 
     def __getitem__(self, index) -> Tuple[np.array, np.array]:
         """
@@ -206,8 +210,6 @@ class EvalGenerator(DataGenerator):
         """
         # Find list of IDs
         list_id_temp = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-
-        # list_id_temp = self.indexes[index]
 
         # Generate data
         x, y = self.__data_generation(list_id_temp)
@@ -221,7 +223,7 @@ class EvalGenerator(DataGenerator):
     def __data_generation(self, list_ids_temp) -> Tuple[np.array, np.array]:
         """Generates data containing batch_size samples"""
         # Initialization
-        x = np.zeros((self.batch_size, self.n_features, 1))
+        x = np.zeros((self.batch_size, self.n_features))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
         for i, sample_info in enumerate(list_ids_temp):
@@ -234,13 +236,17 @@ class EvalGenerator(DataGenerator):
                 else:
                     sample_types = [sample_types]
 
-            else:
+            elif sample_group == "mixture":
                 samples = self.mixture[sample_types][index]
+                sample_types = sample_types.split("+")
+
+            else:
+                samples = self.augmented[sample_types][index]
                 sample_types = sample_types.split("+")
 
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
 
-            x[i, :, 0] = fin_sample
+            x[i, :] = fin_sample
 
             # Store class
             if sample_types:
@@ -255,6 +261,16 @@ class EvalGenerator(DataGenerator):
 
         return x, y
 
+    def _add_augmented(self, augmented_samples: int = None):
+        for _ in range(augmented_samples):
+            x, sample_types = self._generate_augmented_sample()
+            y = "+".join(sorted(sample_types))
+            if y not in self.augmented:
+                self.augmented[y] = [x]
+            else:
+                self.augmented[y].append(x)
+            self.indexes.append(['augmented', y, len(self.augmented[y]) - 1])
+
 
 def read_data(file: str, include_blanks: bool = False) -> Tuple[list, list]:
     """
@@ -265,7 +281,7 @@ def read_data(file: str, include_blanks: bool = False) -> Tuple[list, list]:
     :return: the samples (x) and corresponding classes (y)
     """
     # read data
-    df = pd.read_csv(file, sep=";")
+    df = pd.read_csv(file)
     # fill missing with 0
     df.fillna(0, inplace=True)
     # if blanks should not be included remove them from the data
