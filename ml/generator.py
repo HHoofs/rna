@@ -1,20 +1,24 @@
-from random import sample, choice, choices, seed, shuffle
-from typing import Dict, Iterable, Tuple
+from random import sample, choice, choices, shuffle
+from typing import Dict, Tuple
 
-import keras
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.python.keras.utils import Sequence
 
 
-class DataGenerator(keras.utils.Sequence):
-    'Generates data for Keras'
+BLANKS = ('Blank_PCR',)
+
+
+class DataGenerator(Sequence):
+    """Generates data for Keras"""
     def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
                  sampling: Dict[str, int] = None,
                  batch_size: int = 1, batches_per_epoch: int = 1,
-                 shuffle=True, cut_off=None):
-        'Initialization'
+                 shuffle_before_epoch: bool = True, cut_off: int = None):
+        """Initialization"""
         self.batch_size = batch_size
         self.batches_per_epoch = batches_per_epoch
         self.x = x
@@ -24,7 +28,7 @@ class DataGenerator(keras.utils.Sequence):
         self.classes = list(encoder.classes_)
         self.n_classes = len(encoder.classes_)
         self.conc = "single"
-        self.shuffle = shuffle
+        self.shuffle = shuffle_before_epoch
         self.indexes = list()
         self.cut_off = cut_off
         self.mixture = {}
@@ -60,16 +64,12 @@ class DataGenerator(keras.utils.Sequence):
         list_ids_temp = [*range(self.batch_size)]
 
         # Generate data
-        X, y = self.__data_generation(list_ids_temp)
+        x, y = self.__data_generation(list_ids_temp)
 
-        return X, y
-
-    def on_epoch_end(self):
-        self.first = True
-        seed(a=None, version=2)
+        return x, y
 
     def __data_generation(self, list_id_temp: list) -> Tuple[np.array, np.array]:
-        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        """Generates data containing batch_size samples"""
         # Initialization
         x = np.zeros((self.batch_size, self.n_features, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
@@ -79,64 +79,81 @@ class DataGenerator(keras.utils.Sequence):
             # select a mode for the generation of the data
             mode = choices(['single', 'augment', 'mixture'],
                            [self.sampling['single'], self.sampling['augment'], self.sampling['mixture']])[0]
+
+            # process according to selected mode
             if mode == "single":
                 fin_sample, sample_types = self._generate_single_sample()
-
             elif mode == "mixture":
                 fin_sample, sample_types = self._generate_mixture_sample()
-
             else:
                 fin_sample, sample_types = self._generate_augmented_sample()
 
+            # store x
             x[i, :, 0] = fin_sample
+            # store y
+            if sample_types:
+                for sample_type_idx in self.encoder.transform(sample_types):
+                    y[i, sample_type_idx] = 1
 
-            # Store class
-            for sample_type_idx in self.encoder.transform(sample_types):
-                y[i, sample_type_idx] = 1
-
+        # use cut-off or 'normalize'
         if self.cut_off:
             x = x > self.cut_off
             x = x.astype(int)
         else:
             x = x / 1000
 
-        if self.first:
-            self.first = False
-
         return x, y
 
-    def _generate_mixture_sample(self):
+    def _generate_mixture_sample(self) -> Tuple[np.array, list]:
+        # Select sample type (i.e. class) from all available keys
         sample_type = sample(list(self.mixture.keys()), 1)
+        # select random sample from selected sample type
         samples = choice(self.mixture[sample_type[0]])
+        # get all classes in sample types
         sample_types = sample_type[0].split("+")
+        # select single sample from replicates or take mean
         if self.conc == "single":
             fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
         else:
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+
         return fin_sample, sample_types
 
-    def _generate_single_sample(self):
-        sample_type = sample(self.classes, 1)
+    def _generate_single_sample(self) -> Tuple[np.array, list]:
+        # Select sample type (i.e. class) from all available keys
+        sample_type = sample(self.single.keys(), 1)
+        # select random sample from selected sample type
         samples = choice(self.single[sample_type[0]])
-        sample_types = sample_type
+        # check if sample is blank
+        if sample_type[0] in BLANKS:
+            sample_types = None
+        else:
+            sample_types = sample_type
+        # select single sample from replicates or take mean
         if self.conc == "single":
             fin_sample = samples[choice(range(samples.shape[0])), :] if len(samples.shape) == 2 else samples
         else:
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+
         return fin_sample, sample_types
 
-    def _generate_augmented_sample(self):
+    def _generate_augmented_sample(self) -> Tuple[np.array, list]:
+        # Select sample type (i.e. class) from all available classes
         sample_types = sample(self.classes, 2)
+        # select random sample from selected samples type
         samples = [choice(self.single[sample_type]) for sample_type in sample_types]
+        # select single sample from replicates or take mean
         if self.conc == "single":
             sel_samples = [replicates[choice(range(replicates.shape[0])), :] if len(replicates.shape) == 2 else
                            replicates for replicates in samples]
-        if self.conc == "avg":
+        else:
             sel_samples = [np.mean(np.array(replicates), 0) for replicates in samples]
+        # sum selected sample to augment
         fin_sample = np.sum(sel_samples, 0)
+
         return fin_sample, sample_types
 
-    def _split_data(self):
+    def _split_data(self) -> None:
         for x, y in zip(self.x, self.y):
             if "+" in y:
                 if y not in self.mixture:
@@ -153,16 +170,16 @@ class DataGenerator(keras.utils.Sequence):
 
 
 class EvalGenerator(DataGenerator):
-    'Generates data for Keras'
+    """Generates data for Keras"""
     def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
-                 batch_size: int = 1, shuffle: bool = False, cut_off: int = None):
-        'Initialization'
+                 batch_size: int = 1, shuffle_before_epoch: bool = False, cut_off: int = None):
+        """Initialization"""
         self.x = x
         self.y = y
         self.encoder = encoder
         self.n_features = n_features
         self.batch_size = batch_size
-        self.shuffle = shuffle
+        self.shuffle = shuffle_before_epoch
         self.n_classes = len(encoder.classes_)
         self.conc = "avg"
         self.cut_off = cut_off
@@ -172,7 +189,7 @@ class EvalGenerator(DataGenerator):
         self._split_data()
         self.on_epoch_end()
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Denotes the number of batches per epoch
 
@@ -180,7 +197,7 @@ class EvalGenerator(DataGenerator):
         """
         return len(self.y)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Tuple[np.array, np.array]:
         """
         Generate one batch of data
 
@@ -193,38 +210,42 @@ class EvalGenerator(DataGenerator):
         # list_id_temp = self.indexes[index]
 
         # Generate data
-        X, y = self.__data_generation(list_id_temp)
+        x, y = self.__data_generation(list_id_temp)
 
-        return X, y
+        return x, y
 
-    def on_epoch_end(self):
+    def on_epoch_end(self) -> None:
         if self.shuffle:
             shuffle(self.indexes)
 
-    def __data_generation(self, list_IDs_temp):
-        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+    def __data_generation(self, list_ids_temp) -> Tuple[np.array, np.array]:
+        """Generates data containing batch_size samples"""
         # Initialization
         x = np.zeros((self.batch_size, self.n_features, 1))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
 
-        for i, sample_info  in enumerate(list_IDs_temp):
+        for i, sample_info in enumerate(list_ids_temp):
             sample_group, sample_types, index = sample_info
 
             if sample_group == "single":
                 samples = self.single[sample_types][index]
+                if sample_types in BLANKS:
+                    sample_types = None
+                else:
+                    sample_types = [sample_types]
 
-            if sample_group == "mixture":
+            else:
                 samples = self.mixture[sample_types][index]
+                sample_types = sample_types.split("+")
 
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
 
             x[i, :, 0] = fin_sample
 
-            sample_types = sample_types.split("+")
-
             # Store class
-            for sample_type_idx in self.encoder.transform(sample_types):
-                y[i, sample_type_idx] = 1
+            if sample_types:
+                for sample_type_idx in self.encoder.transform(sample_types):
+                    y[i, sample_type_idx] = 1
 
         if self.cut_off:
             x = x > self.cut_off
@@ -235,7 +256,7 @@ class EvalGenerator(DataGenerator):
         return x, y
 
 
-def read_data(file: str, include_blanks: bool = False) -> (list, list):
+def read_data(file: str, include_blanks: bool = False) -> Tuple[list, list]:
     """
     read in data from csv file into pandas and convert it to samples and classes
 
@@ -244,8 +265,8 @@ def read_data(file: str, include_blanks: bool = False) -> (list, list):
     :return: the samples (x) and corresponding classes (y)
     """
     # read data
-    df = pd.read_csv(file)
-    # fill missings with 0
+    df = pd.read_csv(file, sep=";")
+    # fill missing with 0
     df.fillna(0, inplace=True)
     # if blanks should not be included remove them from the data
     if not include_blanks:
@@ -256,50 +277,29 @@ def read_data(file: str, include_blanks: bool = False) -> (list, list):
     return x, y
 
 
-def extract_samples(df: pd.DataFrame) -> (list, list):
+def extract_samples(df: pd.DataFrame) -> Tuple[list, list]:
     """
     Extract the samples and classes from a dataframe
 
     :param df: a pandas dataframe
     :return: the samples (x) and corresponding classes (y)
     """
+    # check if next replicate value is smaller ot the same as current (indicating a 'new' sample
+    sample_idx = (df['replicate_value'] <= df['replicate_value'].shift()).cumsum()
+    grouped_dfs = df.groupby(sample_idx)
     # init x and y
-    x = list()
-    y = list()
-    # init samples and classes
-    x_new, y_new = None, None
-    # init counter
-    current_counter = np.inf
-    # iterrate over all rows
-    for index, row in df.iterrows():
-        # get new counter
-        new_counter = row["replicate_value"]
-        # if new counter is below current counter new sample is initiated
-        if new_counter <= current_counter:
-            # catch first iteration
-            if x_new:
-                # append sample (as array) to x
-                x.append(np.array(x_new))
-            if y_new:
-                # append class to y
-                y.append(y_new)
-            # retrieve sample and class
-            x_new = list([row[1:-1]])
-            y_new = row[0]
-        else:
-            # retrieve sample (as class is already determined)
-            x_new.append(row[1:-1])
-        # update counter
-        current_counter = new_counter
-
-    # add last sample and class
-    x.append(np.array(x_new))
-    y.append(y_new)
+    x, y = list(), list()
+    # iterate over grouped data frames
+    for _, grouped_df in grouped_dfs:
+        # Placeholder for check if sample is valid
+        if True:
+            x.append(np.array(grouped_df.iloc[:, 1:-1]))
+            y.append(grouped_df.iloc[0, 0])
 
     return x, y
 
 
-def split_train_test(x, y) -> (list, list, list, list):
+def split_train_test(x, y) -> Tuple[list, list, list, list]:
     """
     split the data into a train and test, stratifying for the classes
 
@@ -312,24 +312,36 @@ def split_train_test(x, y) -> (list, list, list, list):
     return x_train, y_train, x_test, y_test
 
 
-def generate_data(include_blanks: bool = False, include_mixtures: bool = False):
-    label_encoder = preprocessing.LabelEncoder()
+def generate_data(include_blanks: bool = False, include_mixtures: bool = False) -> \
+        Tuple[list, list, list, list, LabelEncoder]:
+    """
+    Generate data for training and testing
+
+    :param include_blanks: Boolean to indicate if blank samples should be included
+    :param include_mixtures: Boolean to indicate if mixtures should be included
+    :return: A list with train sample, classes for these samples, test samples, classes for these samples, and a fitted
+    labelencoder to transform the string labels to numeric values
+    """
+    # init label encoder
+    label_encoder = LabelEncoder()
+    # get singles data
     x_single, y_single = read_data(file='data/dataset_single_ann.csv', include_blanks=include_blanks)
-    label_encoder.fit(y_single)
+    # fit encoder on classes from the singles (assuming the mixtures set has no new classes)
+    label_encoder.fit(list(set(y_single) - set(BLANKS)))
+    # split samples
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
 
+    # include mixtures if needed
     if include_mixtures:
+        # get mixture data
         x_mix, y_mix = read_data(file='data/dataset_mixture_ann.csv', include_blanks=include_blanks)
+        # split samples
         x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
 
-        return x_single_train + x_mix_train, \
-               list(y_single_train) + list(y_mix_train), \
-               x_single_test + x_mix_test, \
-               list(y_single_test) + list(y_mix_test), \
+        return x_single_train + x_mix_train, list(y_single_train) + list(y_mix_train), \
+               x_single_test + x_mix_test, list(y_single_test) + list(y_mix_test), \
                label_encoder
     else:
-        return x_single_train, \
-               list(y_single_train), \
-               x_single_test, \
-               list(y_single_test), \
+        return x_single_train, list(y_single_train), \
+               x_single_test, list(y_single_test), \
                label_encoder

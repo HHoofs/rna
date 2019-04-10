@@ -14,9 +14,10 @@ Options:
   --epochs <number>    Number of epochs used for training [default: 1000]
   --batch <size>       Size of each batch during training [default: 16]
 """
+from typing import Tuple
 
 from docopt import docopt
-from keras import Model
+from tensorflow.python.keras import Model
 
 from ml.generator import generate_data, DataGenerator, EvalGenerator
 from ml.model import build_model, compile_model, create_callbacks
@@ -38,7 +39,7 @@ def create_model(arguments: dict, n_classes: int) -> Model:
     return model
 
 
-def create_generators(arguments: dict) -> (DataGenerator, EvalGenerator):
+def create_generators(arguments: dict) -> Tuple[DataGenerator, EvalGenerator]:
     """
     Read in data and create two generators (one for training and one for evaluation/testing)
 
@@ -50,9 +51,11 @@ def create_generators(arguments: dict) -> (DataGenerator, EvalGenerator):
     x_train, y_train, x_test, y_test, label_encoder = generate_data(include_blanks=arguments["--blanks"],
                                                                     include_mixtures=arguments["--mixture"])
 
+    # init train generator
     train_generator = DataGenerator(x_train, y_train, encoder=label_encoder, n_features=int(arguments['--features']),
                                     batch_size=int(arguments["--batch"]), batches_per_epoch=len(x_train))
 
+    # init eval generator
     eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder, n_features=int(arguments['--features']))
 
     return train_generator, eval_generator
@@ -78,5 +81,5 @@ def main(arguments: dict) -> None:
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='rna 0.0')
+    arguments = docopt(__doc__, version='rna 0.1')
     main(arguments)
