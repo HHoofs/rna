@@ -1,14 +1,14 @@
 import os
 import time
-import numpy as np
 
+import numpy as np
 import tensorflow as tf
+from keras import Input, Model
+from keras.callbacks import TensorBoard, Callback
+from keras.layers import Flatten, Dense, Dropout
 from sklearn.metrics import accuracy_score, f1_score
 from tensorflow import Tensor
 from tensorflow.contrib.labeled_tensor.python.ops.core import Scalar
-from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.callbacks import TensorBoard, Callback
-from tensorflow.python.keras.layers import Flatten, Dense, Dropout
 
 from ml.generator import EvalGenerator
 
@@ -28,9 +28,8 @@ def build_model(units: int, n_classes: int, n_features: int) -> Model:
     # inout shape
     x = Input(shape=(n_features, ))
     # flatten input shape (i.e. remove the ,1)
-    cnn_input = Flatten()(x)
     # first dense (hidden) layer
-    cnn = Dense(units//4, activation="sigmoid")(cnn_input)
+    cnn = Dense(units//4, activation="sigmoid")(x)
     # dropout
     cnn = Dropout(rate=drop)(cnn)
     # second dense (hidden) layer
@@ -105,7 +104,6 @@ def _accuracy_em(*args):
     """
     return tf.reduce_mean(_accuracy_exact_match(*args))
 
-
 class MetricsPerType(Callback):
     def __init__(self, eval_generator: EvalGenerator, threshold: float = .5):
         object.__init__(self)
@@ -119,6 +117,7 @@ class MetricsPerType(Callback):
             samples = self.eval_generator.__getattribute__(sample_group)[sample_types][index]
 
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
+            fin_sample /= 1000
 
             y = np.zeros(self.eval_generator.n_classes)
             # Store class

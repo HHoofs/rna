@@ -11,13 +11,14 @@ Options:
   --mixture            If provided, the mixture data is included
   --features <n>       Number of features used for each sample [default: 19]
   --units <n>          Number of units for each conv/dense layer [default: 100]
-  --epochs <n>         Number of epochs used for training [default: 50]
+  --epochs <n>         Number of epochs used for training [default: 25]
   --batch <s>          Size of each batch during training [default: 16]
 """
 from typing import Tuple
 
 from docopt import docopt
-from tensorflow.python.keras import Model
+from keras import Model
+import numpy as np
 
 from ml.generator import generate_data, DataGenerator, EvalGenerator
 from ml.model import build_model, compile_model, create_callbacks

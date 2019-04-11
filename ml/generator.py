@@ -3,10 +3,10 @@ from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
+from keras.utils import Sequence
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from tensorflow.python.keras.utils import Sequence
 
 
 BLANKS = ('Blank_PCR',)
@@ -308,9 +308,12 @@ def extract_samples(df: pd.DataFrame) -> Tuple[list, list]:
     # iterate over grouped data frames
     for _, grouped_df in grouped_dfs:
         # Placeholder for check if sample is valid
-        if True:
+        if (grouped_df.iloc[:, -2] > 150).sum() > 0 and (grouped_df.iloc[:, -3] > 150).sum() > 0:
             x.append(np.array(grouped_df.iloc[:, 1:-1]))
             y.append(grouped_df.iloc[0, 0])
+        else:
+            sample_type = grouped_df.iloc[0, 0]
+            print(f'dropped a {sample_type} sample')
 
     return x, y
 
