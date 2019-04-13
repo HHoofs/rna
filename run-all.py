@@ -2,95 +2,110 @@
 rna
 
 Usage:
-  run-all.py [--blanks] [--mixture] [--augment] [--features <n>] [--units <n>] [--epochs <n>] [--batch <s>]
+  run-all.py [--blanks] [--mixture] [--augment] [--cutoff] [--units <n>] [--epochs <n>] [--batch <s>]
 
 Options:
   -h --help            Show this screen.
-  --flatten <mode>     Mode that is used to flatten te multiple scans
   --blanks             Include blanks in the data
   --mixture            If provided, the mixture data is included
-  --features <n>       Number of features used for each sample [default: 19]
+  --augment            If provided, include augmented data
+  --cutoff             If provided, use cut-off for preprocessing
   --units <n>          Number of units for each conv/dense layer [default: 100]
-  --epochs <n>         Number of epochs used for training [default: 25]
+  --epochs <n>         Number of epochs used for training [default: 100]
   --batch <s>          Size of each batch during training [default: 16]
 """
 from typing import Tuple
 
+from confidence import load_name
 from docopt import docopt
 from keras import Model
-import numpy as np
 
 from ml.generator import generate_data, DataGenerator, EvalGenerator
 from ml.model import build_model, compile_model, create_callbacks
+from utils.utils import store_configuration, create_logdir, store_arguments
 
 
-def create_model(arguments: dict, n_classes: int) -> Model:
+def create_model(arguments: dict, config: dict, n_classes: int) -> Model:
     """
     Create keras/tf model based on the number of classes, features and the the number of units in the model
 
     :param arguments: arguments as parsed by docopt (including `--units` and `--features`)
+    :param config: confidence object with specific information regarding the data
     :param n_classes: number of classes in the output layer
     :return: A compiled keras model
     """
     # build model
-    model = build_model(int(arguments['--units']), n_classes, int(arguments['--features']))
+    model = build_model(units=int(arguments['--units']), n_classes=n_classes, n_features=len(config.columns.prediction))
     # compile model
     compile_model(model)
 
     return model
 
 
-def create_generators(arguments: dict) -> Tuple[DataGenerator, EvalGenerator]:
+def create_generators(arguments: dict, config: dict) -> Tuple[DataGenerator, EvalGenerator]:
     """
     Read in data and create two generators (one for training and one for evaluation/testing)
 
     :param arguments: arguments as parsed by docopt
+    :param config: confidence object with specific information regarding the data
     :return: two DataGenerators, the first containing the train data, the second containing the test data
     """
     # generate data and split into train and test, and return the label encoder for the purpose of
     # converting the output (y) from string to a numeric value
-    x_train, y_train, x_test, y_test, label_encoder = generate_data(include_blanks=arguments["--blanks"],
-                                                                    include_mixtures=arguments["--mixture"])
+    x_train, y_train, x_test, y_test, label_encoder = generate_data(
+        file_s=config.files.single, file_m=config.files.mixture,
+        type_col=config.columns.type, rep_col=config.columns.replicate,
+        val_col=config.columns.validation, pred_col=config.columns.prediction,
+        blank_labels=config.sample_types.blanks, filter_labels=config.sample_types.filter, cut_off=config.cut_off,
+        include_blanks=arguments["--blanks"], apply_filter=True, include_mixtures=arguments["--mixture"])
 
     # init train generator
     sampling = {"single": 1,
                 "mixture": 1 if arguments["--mixture"] else 0,
-                "augment": 1 if arguments["--augment"] else 0}
+                "augment": 2 if arguments["--augment"] else 0}
 
-    print(sampling)
+    cut_off = config.cut_off if arguments['--cutoff'] else None
 
-    train_generator = DataGenerator(x_train, y_train, encoder=label_encoder,
-                                    n_features=int(arguments["--features"]), sampling=sampling,
-                                    batch_size=int(arguments["--batch"]), batches_per_epoch=len(x_train))
+    train_generator = DataGenerator(x_train, y_train, encoder=label_encoder, blank_labels=config.sample_types.blanks,
+                                    n_features=len(config.columns.prediction), sampling=sampling,
+                                    batch_size=int(arguments["--batch"]), batches_per_epoch=len(x_train),
+                                    cut_off=cut_off)
 
     # init eval generator
     augmented_samples = len(x_test)//2 if arguments["--augment"] else None
 
-    eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder,
-                                   augmented_samples=augmented_samples, n_features=int(arguments["--features"]))
+    eval_generator = EvalGenerator(x_test, y_test, encoder=label_encoder, blank_labels=config.sample_types.blanks,
+                                   augmented_samples=augmented_samples, n_features=len(config.columns.prediction),
+                                   cut_off=cut_off)
 
     return train_generator, eval_generator
 
 
-def main(arguments: dict) -> None:
+def main(arguments: dict, config: dict) -> None:
     """
     main, compiling and running the model
 
     :param arguments: arguments as parsed by docopt
+    :param config: confidence object with specific information regarding the data
     """
     # create train and validation genrators
-    train_gen, validation_gen = create_generators(arguments)
+    train_gen, validation_gen = create_generators(arguments, config)
     # create model
-    model = create_model(arguments=arguments, n_classes=train_gen.n_classes)
-    # print model
+    model = create_model(arguments=arguments, config=config, n_classes=train_gen.n_classes)
+    # print model and create log dir
     print(model.summary())
+    logdir = create_logdir()
     # create callbacks
-    callbacks = create_callbacks(int(arguments['--batch']), validation_gen)
+    callbacks = create_callbacks(int(arguments['--batch']), validation_gen, logdir)
     # fit model
     model.fit_generator(train_gen, epochs=int(arguments["--epochs"]), validation_data=validation_gen,
                         callbacks=callbacks, verbose=1, shuffle=False)
+    # store configuration/arguments
+    store_configuration(config, logdir)
+    store_arguments(arguments, logdir)
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='rna 0.1')
-    main(arguments)
+    arguments = docopt(__doc__, version='rna 0.2')
+    config = load_name('rna')
+    main(arguments, config)

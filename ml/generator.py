@@ -1,5 +1,6 @@
+import os
 from random import sample, choice, choices, shuffle
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Iterable
 
 import numpy as np
 import pandas as pd
@@ -9,12 +10,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 
-BLANKS = ('Blank_PCR',)
-
-
 class DataGenerator(Sequence):
     """Generates data for Keras"""
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, n_features: int = 19,
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, blank_labels: Iterable,
+                 n_features: int = 19,
                  sampling: Dict[str, int] = None,
                  batch_size: int = 1, batches_per_epoch: int = 1,
                  shuffle_before_epoch: bool = True, cut_off: int = None):
@@ -24,6 +23,7 @@ class DataGenerator(Sequence):
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.blank_labels = blank_labels
         self.n_features = n_features
         self.classes = list(encoder.classes_)
         self.n_classes = len(encoder.classes_)
@@ -49,7 +49,7 @@ class DataGenerator(Sequence):
         """
         Denotes the number of batches per epoch
 
-        :return:
+        :return: the length of generator for one batch
         """
         return self.batches_per_epoch
 
@@ -57,8 +57,8 @@ class DataGenerator(Sequence):
         """
         Generate one batch of data
 
-        :param index:
-        :return:
+        :param index: the current index of the generator
+        :return: Two numpy arrays with the x and y values
         """
         # Find list of IDs
         list_ids_temp = [*range(self.batch_size)]
@@ -69,7 +69,12 @@ class DataGenerator(Sequence):
         return x, y
 
     def __data_generation(self, list_id_temp: list) -> Tuple[np.array, np.array]:
-        """Generates data containing batch_size samples"""
+        """
+        Generates a data stream to use in a keras model
+
+        :param list_id_temp: a list containing the index which are placed (i.e. batch size)
+        :return: Two numpy arrays with the x and y values
+        """
         # Initialization
         x = np.zeros((self.batch_size, self.n_features))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
@@ -105,6 +110,11 @@ class DataGenerator(Sequence):
         return x, y
 
     def _generate_mixture_sample(self) -> Tuple[np.array, list]:
+        """
+        Retrieves a mixture sample from a random class (balanced)
+
+        :return: A numpy array with the sample and the sample types
+        """
         # Select sample type (i.e. class) from all available keys
         sample_type = sample(list(self.mixture.keys()), 1)
         # select random sample from selected sample type
@@ -120,12 +130,17 @@ class DataGenerator(Sequence):
         return fin_sample, sample_types
 
     def _generate_single_sample(self) -> Tuple[np.array, list]:
+        """
+        Retrieves a single sample from a random class (balanced)
+
+        :return: A numpy array with the sample and the sample type
+        """
         # Select sample type (i.e. class) from all available keys
         sample_type = sample(self.single.keys(), 1)
         # select random sample from selected sample type
         samples = choice(self.single[sample_type[0]])
         # check if sample is blank
-        if sample_type[0] in BLANKS:
+        if sample_type[0] in self.blank_labels:
             sample_types = None
         else:
             sample_types = sample_type
@@ -138,6 +153,11 @@ class DataGenerator(Sequence):
         return fin_sample, sample_types
 
     def _generate_augmented_sample(self) -> Tuple[np.array, list]:
+        """
+        Generates an augmented sample, which is the sum of two single samples
+
+        :return: A numpy array with the augmented (summed) sample and the sample types
+        """
         # Select sample type (i.e. class) from all available classes
         sample_types = sample(self.classes, 2)
         # select random sample from selected samples type
@@ -154,6 +174,9 @@ class DataGenerator(Sequence):
         return fin_sample, sample_types
 
     def _split_data(self) -> None:
+        """
+        stores each sample to each respective class, and store its index
+        """
         for x, y in zip(self.x, self.y):
             if "+" in y:
                 if y not in self.mixture:
@@ -171,12 +194,14 @@ class DataGenerator(Sequence):
 
 class EvalGenerator(DataGenerator):
     """Generates data for Keras"""
-    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, augmented_samples: int = None, n_features: int = 19,
+    def __init__(self, x, y, encoder: preprocessing.LabelEncoder, blank_labels = Iterable,
+                 augmented_samples: int = None, n_features: int = 19,
                  batch_size: int = 1, shuffle_before_epoch: bool = False, cut_off: int = None):
         """Initialization"""
         self.x = x
         self.y = y
         self.encoder = encoder
+        self.blank_labels = blank_labels
         self.n_features = n_features
         self.batch_size = batch_size
         self.shuffle = shuffle_before_epoch
@@ -197,7 +222,7 @@ class EvalGenerator(DataGenerator):
         """
         Denotes the number of batches per epoch
 
-        :return:
+        :return: the length of generator for one batch
         """
         return len(self.indexes)
 
@@ -205,8 +230,8 @@ class EvalGenerator(DataGenerator):
         """
         Generate one batch of data
 
-        :param index:
-        :return:
+        :param index: the current index of the generator
+        :return: Two numpy arrays with the x and y values
         """
         # Find list of IDs
         list_id_temp = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
@@ -217,11 +242,20 @@ class EvalGenerator(DataGenerator):
         return x, y
 
     def on_epoch_end(self) -> None:
+        """
+        functions performed on the end of an epoch
+        """
+        # if shuffle, rearrange the indexes
         if self.shuffle:
             shuffle(self.indexes)
 
     def __data_generation(self, list_ids_temp) -> Tuple[np.array, np.array]:
-        """Generates data containing batch_size samples"""
+        """
+        Generates a data stream to use in a keras model
+
+        :param list_ids_temp: a list containing the the current meta information of the sample retrieved
+        :return: Two numpy arrays with the x and y values
+        """
         # Initialization
         x = np.zeros((self.batch_size, self.n_features))
         y = np.zeros((self.batch_size, self.n_classes), dtype=int)
@@ -231,7 +265,7 @@ class EvalGenerator(DataGenerator):
 
             if sample_group == "single":
                 samples = self.single[sample_types][index]
-                if sample_types in BLANKS:
+                if sample_types in self.blank_labels:
                     sample_types = None
                 else:
                     sample_types = [sample_types]
@@ -261,7 +295,12 @@ class EvalGenerator(DataGenerator):
 
         return x, y
 
-    def _add_augmented(self, augmented_samples: int = None):
+    def _add_augmented(self, augmented_samples: int = None) -> None:
+        """
+        add (static) augmented samples to the index and data
+
+        :param augmented_samples: number of augmented samples
+        """
         for _ in range(augmented_samples):
             x, sample_types = self._generate_augmented_sample()
             y = "+".join(sorted(sample_types))
@@ -272,12 +311,23 @@ class EvalGenerator(DataGenerator):
             self.indexes.append(['augmented', y, len(self.augmented[y]) - 1])
 
 
-def read_data(file: str, include_blanks: bool = False) -> Tuple[list, list]:
+def read_data(file: str, type_col:str, rep_col: str, val_col: str, pred_col: str,
+              blank_labels: str, filter_labels: str,
+              cut_off: int,
+              include_blanks: bool = False, apply_filter: bool = True) -> Tuple[list, list]:
     """
     read in data from csv file into pandas and convert it to samples and classes
 
     :param file: string of file location
+    :param type_col: column name of the sample type
+    :param rep_col: column name of the replication value
+    :param val_col: column names of the validation markers
+    :param pred_col: column names of the prediction markers
+    :param cut_off: value at which a marker should be considered valid.
+    :param blank_labels: names of types that indicate that the type is a blank
+    :param filter_labels: names of the types that should be filtered if filter is true
     :param include_blanks: boolean to indicate if blanks should be included in the samples (and classes)
+    :param apply_filter: boolean to indicate if sample types specified in project yaml should be filtered
     :return: the samples (x) and corresponding classes (y)
     """
     # read data
@@ -286,33 +336,42 @@ def read_data(file: str, include_blanks: bool = False) -> Tuple[list, list]:
     df.fillna(0, inplace=True)
     # if blanks should not be included remove them from the data
     if not include_blanks:
-        df = df[df['type'] != "Blank_PCR"]
+        df = df[~df['type'].isin(blank_labels)]
+    if apply_filter:
+        df = df[~df['type'].isin(filter_labels)]
     # extract samples and classes
-    x, y = extract_samples(df)
+    x, y = extract_samples(df, type_col, rep_col, val_col, pred_col, cut_off)
 
     return x, y
 
 
-def extract_samples(df: pd.DataFrame) -> Tuple[list, list]:
+def extract_samples(df: pd.DataFrame,
+                    type_col: str, rep_col: str, val_col: str, pred_col: str,
+                    cut_off: int) -> Tuple[list, list]:
     """
     Extract the samples and classes from a dataframe
 
     :param df: a pandas dataframe
+    :param type_col: column name of the sample type
+    :param rep_col: column name of the replication value
+    :param val_col: column names of the validation markers
+    :param pred_col: column names of the prediction markers
+    :param cut_off: value at which a marker should be considered valid.
     :return: the samples (x) and corresponding classes (y)
     """
     # check if next replicate value is smaller ot the same as current (indicating a 'new' sample
-    sample_idx = (df['replicate_value'] <= df['replicate_value'].shift()).cumsum()
+    sample_idx = (df[rep_col] <= df[rep_col].shift()).cumsum()
     grouped_dfs = df.groupby(sample_idx)
     # init x and y
     x, y = list(), list()
     # iterate over grouped data frames
     for _, grouped_df in grouped_dfs:
         # Placeholder for check if sample is valid
-        if (grouped_df.iloc[:, -2] > 150).sum() > 0 and (grouped_df.iloc[:, -3] > 150).sum() > 0:
-            x.append(np.array(grouped_df.iloc[:, 1:-1]))
-            y.append(grouped_df.iloc[0, 0])
+        if np.all((grouped_df[val_col] > cut_off).sum() > 0):
+            x.append(np.array(grouped_df[pred_col]))
+            y.append(grouped_df[type_col].iloc[0])
         else:
-            sample_type = grouped_df.iloc[0, 0]
+            sample_type = grouped_df[type_col].iloc[0]
             print(f'dropped a {sample_type} sample')
 
     return x, y
@@ -326,17 +385,31 @@ def split_train_test(x, y) -> Tuple[list, list, list, list]:
     :param y: classes
     :return: train samples, test samples, train classes, test classes
     """
-    x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.1, random_state=42)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.2, random_state=42)
 
     return x_train, y_train, x_test, y_test
 
 
-def generate_data(include_blanks: bool = False, include_mixtures: bool = False) -> \
+def generate_data(file_s: str, file_m: str,
+                  type_col:str, rep_col: str, val_col: str, pred_col: str,
+                  blank_labels: str, filter_labels: str,
+                  cut_off: int,
+                  include_blanks: bool = False, apply_filter: bool = True, include_mixtures: bool = False) -> \
         Tuple[list, list, list, list, LabelEncoder]:
     """
     Generate data for training and testing
 
+    :param file_s: file name of single samples
+    :param file_m: file name of mixture samples
+    :param type_col: column name of the sample type
+    :param rep_col: column name of the replication value
+    :param val_col: column names of the validation markers
+    :param pred_col: column names of the prediction markers
+    :param blank_labels: names of types that indicate that the type is a blank
+    :param filter_labels: names of the types that should be filtered if filter is true
+    :param cut_off: value at which a marker should be considered valid.
     :param include_blanks: Boolean to indicate if blank samples should be included
+    :param apply_filter: Boolean to indicate if sample types (as specified in the yaml) should be filtered
     :param include_mixtures: Boolean to indicate if mixtures should be included
     :return: A list with train sample, classes for these samples, test samples, classes for these samples, and a fitted
     labelencoder to transform the string labels to numeric values
@@ -344,16 +417,22 @@ def generate_data(include_blanks: bool = False, include_mixtures: bool = False) 
     # init label encoder
     label_encoder = LabelEncoder()
     # get singles data
-    x_single, y_single = read_data(file='data/dataset_single_ann.csv', include_blanks=include_blanks)
+    x_single, y_single = read_data(file=os.path.join('data', file_s),
+                                   type_col=type_col, rep_col=rep_col, val_col=val_col, pred_col=pred_col,
+                                   blank_labels=blank_labels, filter_labels=filter_labels, cut_off=cut_off,
+                                   include_blanks=include_blanks, apply_filter=apply_filter)
     # fit encoder on classes from the singles (assuming the mixtures set has no new classes)
-    label_encoder.fit(list(set(y_single) - set(BLANKS)))
+    label_encoder.fit(list(set(y_single) - set(blank_labels)))
     # split samples
     x_single_train, y_single_train, x_single_test, y_single_test = split_train_test(x_single, y_single)
 
     # include mixtures if needed
     if include_mixtures:
         # get mixture data
-        x_mix, y_mix = read_data(file='data/dataset_mixture_ann.csv', include_blanks=include_blanks)
+        x_mix, y_mix = read_data(file=os.path.join('data', file_m),
+                                 type_col=type_col, rep_col=rep_col, val_col=val_col, pred_col=pred_col,
+                                 blank_labels=blank_labels, filter_labels=filter_labels, cut_off=cut_off,
+                                 include_blanks=include_blanks, apply_filter=apply_filter)
         # split samples
         x_mix_train, y_mix_train, x_mix_test, y_mix_test = split_train_test(x_mix, y_mix)
 

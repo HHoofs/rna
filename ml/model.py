@@ -1,12 +1,12 @@
 import os
-import time
+from typing import Tuple
 
 import numpy as np
 import tensorflow as tf
 from keras import Input, Model
-from keras.callbacks import TensorBoard, Callback
-from keras.layers import Flatten, Dense, Dropout
-from sklearn.metrics import accuracy_score, f1_score
+from keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+from keras.layers import Dense, Dropout
+from sklearn.metrics import accuracy_score, classification_report
 from tensorflow import Tensor
 from tensorflow.contrib.labeled_tensor.python.ops.core import Scalar
 
@@ -55,21 +55,20 @@ def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_cro
     model.compile(optimizer=optimizer, loss=loss, metrics=[_accuracy_em])
 
 
-def create_callbacks(batch_size: int, generator: EvalGenerator) -> list:
+def create_callbacks(batch_size: int, generator: EvalGenerator, log_dir: str) -> list:
     """
     create callbacks to use in model.fit
 
     :param batch_size: batch size used for training the model
     :param generator: data generator
+    :param log_dir: directory which is used for the logging
     :return: a list of callbacks
     """
-    # create path for log dir
-    log_dir = os.path.join('./logs', str(time.time()).replace('.', ''))
-    # create log dir path
-    os.makedirs(log_dir)
     # create callbacks
     callbacks = [TensorBoard(log_dir=log_dir, batch_size=batch_size),
-                 MetricsPerType(generator)]
+                 MetricsPerType(generator),
+                 ModelCheckpoint(filepath=os.path.join(log_dir, 'weights_{epoch:02d}_{val_loss:.2f}.hdf5'),
+                                 save_best_only=True)]
 
     return callbacks
 
@@ -96,15 +95,20 @@ def _accuracy_exact_match(y_true: Tensor, y_pred: Tensor, threshold: float = .5)
     return exact_match
 
 
-def _accuracy_em(*args):
+def _accuracy_em(*args) -> Scalar:
     """
     wrapper for _accuracy_exact_match
-    :param args: *
+
+    :param args: input from metric evaluation provided by keras
     :return: float that represents the accuracy
     """
     return tf.reduce_mean(_accuracy_exact_match(*args))
 
+
 class MetricsPerType(Callback):
+    """
+    Callback that computes metrics for each sample group (single/augmented/mixture)
+    """
     def __init__(self, eval_generator: EvalGenerator, threshold: float = .5):
         object.__init__(self)
         self.eval_generator = eval_generator
@@ -112,13 +116,25 @@ class MetricsPerType(Callback):
         self.y_pred = {}
         self.y_true = {}
 
-    def on_train_end(self, logs={}):
+    def on_train_end(self, logs={}) -> None:
+        """
+        calculate metrics at the and of training
+
+        :param logs: logs from training
+        """
         for sample_group, sample_types, index, in self.eval_generator.indexes:
+            # select correct sample(s)
             samples = self.eval_generator.__getattribute__(sample_group)[sample_types][index]
 
+            # average samples if multiple
             fin_sample = np.mean(samples, 0) if len(samples.shape) == 2 else samples
-            fin_sample /= 1000
+            # convert according to cut-off
+            if self.eval_generator.cut_off:
+                fin_sample = fin_sample > self.eval_generator.cut_off
+            else:
+                fin_sample /= 1000
 
+            # init y
             y = np.zeros(self.eval_generator.n_classes)
             # Store class
             if sample_types:
@@ -129,8 +145,10 @@ class MetricsPerType(Callback):
                 for sample_type_idx in self.eval_generator.encoder.transform(sample_types):
                     y[sample_type_idx] = 1
 
+            # predict
             y_pred = self.model.predict(np.expand_dims(fin_sample, 0))
 
+            # store per group
             if sample_group not in self.y_pred:
                 self.y_pred[sample_group] = [y_pred]
                 self.y_true[sample_group] = [y]
@@ -139,20 +157,40 @@ class MetricsPerType(Callback):
                 self.y_true[sample_group].append(y)
 
         for i, sample_group in enumerate(self.y_true.keys()):
-            y_true_mat = np.array(self.y_true[sample_group])
-            y_pred_mat = np.squeeze(np.array(self.y_pred[sample_group]) >= self.threshold)
-            acc = accuracy_score(y_true_mat, y_pred_mat)
-            f1 = f1_score(y_true_mat, y_pred_mat, average='samples')
-            print(f'accuracy {sample_group}: {acc}')
-            print(f'f1-score {sample_group}: {f1}')
+            # extract matrices and print metrics
+            y_pred_mat, y_true_mat = self._convert_and_compute_metrics(sample_group)
 
+            # store for total
             if i == 0:
                 y_true_tot, y_pred_tot = y_true_mat, y_pred_mat
             else:
                 y_true_tot = np.append(y_true_tot, y_true_mat, 0)
                 y_pred_tot = np.append(y_pred_tot, y_pred_mat, 0)
 
+        # calculate accuracy
         acc_tot = accuracy_score(y_true_tot, y_pred_tot)
-        f1_tot = f1_score(y_true_tot, y_pred_tot, average='samples')
-        print(f'accuracy total: {acc_tot}')
-        print(f'f1-score total: {f1_tot}')
+        # print metrics
+        print(f'== Report for all sample groups ==')
+        print(f'accuracy: {acc_tot:.2f}')
+        print(classification_report(y_true_tot, y_pred_tot, target_names=self.eval_generator.classes))
+
+    def _convert_and_compute_metrics(self, sample_group: str) -> Tuple[np.array, np.array]:
+        """
+        Select sample group and extract all samples, compute metrics and return y_true and y_pred as numpy array
+
+        :param sample_group: name of sample group
+        :return: a numpy array with the predictions (binary), a numpy array with the ground truth
+        """
+        # convert y_true to numpy array
+        y_true_mat = np.array(self.y_true[sample_group])
+        # convert y_pred to numpy array and check if above threshold
+        y_pred_mat = np.squeeze(np.array(self.y_pred[sample_group]) >= self.threshold)
+        # calculate accuracy
+        acc = accuracy_score(y_true_mat, y_pred_mat)
+        # print metrics
+        print(f'== Report for {sample_group} ==')
+        print(f'accuracy: {acc:.2f}')
+        print(classification_report(y_true_mat, y_pred_mat, target_names=self.eval_generator.classes))
+        print('')
+
+        return y_pred_mat, y_true_mat
