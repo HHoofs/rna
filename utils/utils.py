@@ -2,6 +2,7 @@ import logging
 import time
 from os import makedirs
 from os.path import join
+import git
 
 
 def create_logdir() -> str:
@@ -9,8 +10,9 @@ def create_logdir() -> str:
     creates directory for logging and returns path as string
     :return: string of the logdir
     """
+    repo = git.Repo(search_parent_directories=True)
     # create path for log dir
-    log_dir = join('./logs', str(time.time()).replace('.', ''))
+    log_dir = join('./logs', '_'.join([str(time.time()).replace('.', ''), repo.head.object.hexsha]))
     # create log dir path
     makedirs(log_dir)
 
