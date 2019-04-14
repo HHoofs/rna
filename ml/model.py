@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Tuple
 
@@ -11,6 +12,9 @@ from tensorflow import Tensor
 from tensorflow.contrib.labeled_tensor.python.ops.core import Scalar
 
 from ml.generator import EvalGenerator
+
+
+logger = logging.getLogger('main')
 
 
 def build_model(units: int, n_classes: int, n_features: int) -> Model:
@@ -55,7 +59,7 @@ def compile_model(model: Model, optimizer: str = "adam", loss: str = "binary_cro
     model.compile(optimizer=optimizer, loss=loss, metrics=[_accuracy_em])
 
 
-def create_callbacks(batch_size: int, generator: EvalGenerator, log_dir: str) -> list:
+def create_callbacks(batch_size: int, generator: EvalGenerator, log_dir: str,) -> list:
     """
     create callbacks to use in model.fit
 
@@ -67,8 +71,8 @@ def create_callbacks(batch_size: int, generator: EvalGenerator, log_dir: str) ->
     # create callbacks
     callbacks = [TensorBoard(log_dir=log_dir, batch_size=batch_size),
                  MetricsPerType(generator),
-                 ModelCheckpoint(filepath=os.path.join(log_dir, 'weights_{epoch:02d}_{val_loss:.2f}.hdf5'),
-                                 save_best_only=True)]
+                 ModelCheckpoint(filepath=os.path.join(log_dir, 'model_weights_{epoch:02d}.hdf5'),
+                                 save_best_only=False, save_weights_only=True)]
 
     return callbacks
 
@@ -170,9 +174,9 @@ class MetricsPerType(Callback):
         # calculate accuracy
         acc_tot = accuracy_score(y_true_tot, y_pred_tot)
         # print metrics
-        print(f'== Report for all sample groups ==')
-        print(f'accuracy: {acc_tot:.2f}')
-        print(classification_report(y_true_tot, y_pred_tot, target_names=self.eval_generator.classes))
+        logger.info(f'==Report for all sample groups==')
+        logger.info(f'accuracy: {acc_tot:.2f}')
+        logger.info(classification_report(y_true_tot, y_pred_tot, target_names=self.eval_generator.classes))
 
     def _convert_and_compute_metrics(self, sample_group: str) -> Tuple[np.array, np.array]:
         """
@@ -188,9 +192,8 @@ class MetricsPerType(Callback):
         # calculate accuracy
         acc = accuracy_score(y_true_mat, y_pred_mat)
         # print metrics
-        print(f'== Report for {sample_group} ==')
-        print(f'accuracy: {acc:.2f}')
-        print(classification_report(y_true_mat, y_pred_mat, target_names=self.eval_generator.classes))
-        print('')
+        logger.info(f'==Report for {sample_group}==')
+        logger.info(f'accuracy: {acc:.2f}')
+        logger.info(classification_report(y_true_mat, y_pred_mat, target_names=self.eval_generator.classes))
 
         return y_pred_mat, y_true_mat

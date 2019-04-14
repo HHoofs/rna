@@ -1,3 +1,4 @@
+import logging
 import os
 from random import sample, choice, choices, shuffle
 from typing import Dict, Tuple, Iterable
@@ -8,6 +9,9 @@ from keras.utils import Sequence
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+
+
+logger = logging.getLogger('main')
 
 
 class DataGenerator(Sequence):
@@ -372,7 +376,7 @@ def extract_samples(df: pd.DataFrame,
             y.append(grouped_df[type_col].iloc[0])
         else:
             sample_type = grouped_df[type_col].iloc[0]
-            print(f'dropped a {sample_type} sample')
+            logger.warning(f'dropped a {sample_type} sample')
 
     return x, y
 
