@@ -30,6 +30,9 @@ def create_logging() -> str:
 
     logdir = create_logdir()
 
-    logger.addHandler(logging.FileHandler(join(logdir, 'log.log'))), \
+    logger.addHandler(logging.FileHandler(join(logdir, 'log.log')))
+
+    if git.Repo(search_parent_directories=True).is_dirty():
+        logger.warning('Not all files were committed before the execution of this script!')
 
     return logdir
